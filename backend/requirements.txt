@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-multipart
+pdfplumber
+pytesseract
+pillow
+requests
+google-generativeai
