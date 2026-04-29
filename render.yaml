@@ -1,0 +1,22 @@
+services:
+  # 백엔드 서비스
+  - type: web
+    name: remicon-backend
+    env: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false  # 수동으로 설정해야 함
+
+  # 프론트엔드 서비스
+  - type: web
+    name: remicon-frontend
+    env: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npx serve -s dist -p $PORT
+
+databases:
+  - name: remicon-db
+    databaseName: remicon
+    user: remicon_user
