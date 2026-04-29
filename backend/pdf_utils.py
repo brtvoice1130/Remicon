@@ -8,9 +8,13 @@ import re
 import os
 import google.generativeai as genai
 
-# Google API 키 설정
-GOOGLE_API_KEY = "AIzaSyDkADnwq-uIfqjpozVH8NbGxO8aDWSxuZo"
-genai.configure(api_key=GOOGLE_API_KEY)
+# Google API 키 설정 (환경변수에서 가져오기)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    print("⚠️ GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.")
+    print("설정 방법: export GOOGLE_API_KEY='your_api_key'")
+else:
+    genai.configure(api_key=GOOGLE_API_KEY)
 
 def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
     """
@@ -66,10 +70,11 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
                 print(f"📄 Processing page {i+1} with AI...")
                 page_extracted = extract_with_ai(page_text, user_prompt)
                 if page_extracted:
-                    # API 할당량 소진 확인
+                    # API 할당량 소진 확인 - 즉시 중단하고 사용자에게 안내
                     if any(item.get('api_quota_exceeded') for item in page_extracted):
-                        print("❌ API 할당량 소진으로 작업 중단")
-                        return page_extracted  # 에러 정보 반환
+                        print("❌ API 할당량이 소진되어 처리를 중단합니다")
+                        print("💡 할당량은 매일 오전 9시(한국시간)에 복구됩니다")
+                        return page_extracted  # 할당량 소진 안내와 함께 즉시 반환
 
                     ai_extracted_all.extend(page_extracted)
                     print(f"✅ Page {i+1}: {len(page_extracted)} records")
