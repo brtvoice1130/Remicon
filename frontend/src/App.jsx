@@ -186,10 +186,20 @@ function App() {
         showNotification(`PDF를 업로드했지만 유효한 데이터가 없습니다.`, "warning");
       }
     } catch (err) {
+      // 디버깅용 로그 추가
+      console.log("업로드 에러 발생:", err);
+      console.log("에러 응답:", err.response);
+      console.log("에러 상태:", err.response?.status);
+      console.log("에러 데이터:", err.response?.data);
+
       // 429 상태 코드 (API 할당량 초과) 확인
       if (err.response && err.response.status === 429) {
         setError("API 할당량이 소진되어 작업을 진행할 수 없습니다.");
         showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오전 9시(한국시간)에 복구됩니다.", "warning");
+      } else if (err.response?.data?.status === "api_quota_exceeded") {
+        // 백엔드에서 직접 status를 확인
+        setError("API 할당량이 소진되어 작업을 진행할 수 없습니다.");
+        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오후 4시에 복구됩니다.", "warning");
       } else {
         setError("업로드 또는 추출 중 오류 발생");
         showNotification("오류가 발생했습니다. 다시 시도해주세요.", "error");
