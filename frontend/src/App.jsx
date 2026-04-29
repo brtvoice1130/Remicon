@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import axios from "axios";
 
+// API URL 환경변수 설정 (개발: localhost, 프로덕션: 배포된 백엔드 URL)
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 function App() {
   const [file, setFile] = useState(null);
   const [result, setResult] = useState(null);
@@ -26,7 +29,7 @@ function App() {
 
   const fetchSavedData = async () => {
     try {
-      const response = await axios.get("http://localhost:8001/data/");
+      const response = await axios.get(`${API_BASE_URL}/data/`);
       if (response.data.status === "success") {
         setSavedData(response.data.data);
       }
@@ -37,7 +40,7 @@ function App() {
 
   const fetchStatistics = async () => {
     try {
-      const response = await axios.get("http://localhost:8001/statistics/");
+      const response = await axios.get(`${API_BASE_URL}/statistics/`);
       if (response.data.status === "success") {
         setStatistics(response.data.statistics);
       }
@@ -48,7 +51,7 @@ function App() {
 
   const fetchAiExtractions = async () => {
     try {
-      const response = await axios.get("http://localhost:8001/ai-extractions/");
+      const response = await axios.get(`${API_BASE_URL}/ai-extractions/`);
       if (response.data.status === "success") {
         setAiExtractions(response.data.extractions);
       }
@@ -59,7 +62,7 @@ function App() {
 
   const fetchExtractionDetail = async (extractionId) => {
     try {
-      const response = await axios.get(`http://localhost:8001/ai-extractions/${extractionId}`);
+      const response = await axios.get(`${API_BASE_URL}/ai-extractions/${extractionId}`);
       if (response.data.status === "success") {
         setSelectedExtraction(response.data.data);
       }
@@ -79,7 +82,7 @@ function App() {
 
     try {
       setLoading(true);
-      const uploadResponse = await axios.post('http://localhost:8001/upload_pdf/', formData, {
+      const uploadResponse = await axios.post(`${API_BASE_URL}/upload_pdf/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -91,7 +94,7 @@ function App() {
 
       if (uploadResponse.data.status === "success") {
         const testResponse = await axios.post(
-          `http://localhost:8001/ai-extractions/test/${uploadResponse.data.filename}`,
+          `${API_BASE_URL}/ai-extractions/test/${uploadResponse.data.filename}`,
           null,
           { params: { prompt: settings.prompt } }
         );
@@ -123,7 +126,7 @@ function App() {
 
   const deleteDataItem = async (id) => {
     try {
-      await axios.delete(`http://localhost:8001/data/${id}`);
+      await axios.delete(`${API_BASE_URL}/data/${id}`);
       showNotification("데이터가 삭제되었습니다!");
       fetchSavedData();
       fetchStatistics();
@@ -135,7 +138,7 @@ function App() {
   const clearAllData = async () => {
     if (window.confirm('⚠️ 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
       try {
-        await axios.delete('http://localhost:8001/data/');
+        await axios.delete(`${API_BASE_URL}/data/`);
         showNotification("모든 데이터가 삭제되었습니다!");
         setSavedData([]);
         setStatistics({ total_records: 0, total_files: 0, total_amount: 0 });
@@ -162,7 +165,7 @@ function App() {
     formData.append("prompt", settings.prompt);
     try {
       const res = await axios.post(
-        "http://localhost:8001/upload_pdf/",
+        `${API_BASE_URL}/upload_pdf/`,
         formData,
         {
           headers: {
