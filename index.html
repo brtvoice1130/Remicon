@@ -1,12 +1,105 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Remicon - PDF 추출 도구</title>
-    <script type="module" crossorigin src="/assets/index-D09ZevGf.js"></script>
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remicon - Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 50px;
+            margin: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+        }
+        .api-test {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            margin: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #results {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Remicon</h1>
+        <p>Vercel 배포 테스트 중...</p>
+
+        <div class="api-test">
+            <h3>API 테스트</h3>
+            <button onclick="testAPI('/api/hello')">Hello API</button>
+            <button onclick="testAPI('/api/test')">Test API</button>
+            <button onclick="testAPI('/api/statistics')">Statistics API</button>
+            <button onclick="testAPI('/api/upload_pdf')">Upload API</button>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function testAPI(url) {
+            const resultsDiv = document.getElementById('results');
+            try {
+                const response = await fetch(url);
+                const data = await response.text();
+                resultsDiv.innerHTML = `
+                    <h4>✅ ${url} 테스트 결과:</h4>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <pre>${data}</pre>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <h4>❌ ${url} 테스트 실패:</h4>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+
+        // 페이지 로드 시 자동 테스트
+        window.onload = function() {
+            document.getElementById('results').innerHTML = `
+                <h4>🎉 정적 파일 로드 성공!</h4>
+                <p>Vercel에서 index.html이 정상적으로 서빙되고 있습니다.</p>
+                <p>위의 버튼을 클릭해서 API들을 테스트해보세요.</p>
+            `;
+        }
+    </script>
+</body>
 </html>
