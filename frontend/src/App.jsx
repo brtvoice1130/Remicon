@@ -29,7 +29,7 @@ function App() {
 
   const fetchSavedData = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/data/`);
+      const response = await axios.get(`${API_BASE_URL}/data`);
       if (response.data.status === "success") {
         setSavedData(response.data.data);
       }
@@ -40,7 +40,7 @@ function App() {
 
   const fetchStatistics = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/statistics/`);
+      const response = await axios.get(`${API_BASE_URL}/statistics`);
       if (response.data.status === "success") {
         setStatistics(response.data.statistics);
       }
@@ -51,7 +51,7 @@ function App() {
 
   const fetchAiExtractions = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/ai-extractions/`);
+      const response = await axios.get(`${API_BASE_URL}/ai-extractions`);
       if (response.data.status === "success") {
         setAiExtractions(response.data.extractions);
       }
@@ -82,7 +82,7 @@ function App() {
 
     try {
       setLoading(true);
-      const uploadResponse = await axios.post(`${API_BASE_URL}/upload_pdf/`, formData, {
+      const uploadResponse = await axios.post(`${API_BASE_URL}/upload_pdf`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -139,7 +139,7 @@ function App() {
   const clearAllData = async () => {
     if (window.confirm('⚠️ 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
       try {
-        await axios.delete(`${API_BASE_URL}/data/`);
+        await axios.delete(`${API_BASE_URL}/data`);
         showNotification("모든 데이터가 삭제되었습니다!");
         setSavedData([]);
         setStatistics({ total_records: 0, total_files: 0, total_amount: 0 });
@@ -166,7 +166,7 @@ function App() {
     formData.append("prompt", settings.prompt);
     try {
       const res = await axios.post(
-        `${API_BASE_URL}/upload_pdf/`,
+        `${API_BASE_URL}/upload_pdf`,
         formData,
         {
           headers: {
