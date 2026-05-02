@@ -1,23 +1,37 @@
-import sqlite3
+import psycopg2
 import json
 import re
+import os
 from datetime import datetime
 from typing import List, Dict
+from dotenv import load_dotenv
+
+# 환경변수 로드
+load_dotenv(dotenv_path="../.env")
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "remicon.db"):
-        self.db_path = db_path
+    def __init__(self):
+        # Supabase 연결 정보
+        self.db_url = os.getenv("SUPABASE_DB_URL")
+        if not self.db_url:
+            print("⚠️ SUPABASE_DB_URL 환경변수가 설정되지 않았습니다.")
+            raise ValueError("Supabase database URL is required")
+
         self.init_database()
+
+    def get_connection(self):
+        """Supabase PostgreSQL 연결 반환"""
+        return psycopg2.connect(self.db_url)
 
     def init_database(self):
         """데이터베이스 초기화 및 테이블 생성"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # 추출 데이터 테이블
+            # 추출 데이터 테이블 (PostgreSQL 문법)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS extracted_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     filename TEXT NOT NULL,
                     upload_date TEXT NOT NULL,
                     site_name TEXT,
@@ -34,36 +48,37 @@ class DatabaseManager:
                     method TEXT,
                     raw_data TEXT,
                     prompt_used TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
             # 파일 업로드 히스토리 테이블
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS upload_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     filename TEXT NOT NULL,
                     file_size INTEGER,
-                    upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     status TEXT,
                     extracted_rows INTEGER DEFAULT 0
                 )
             """)
 
             conn.commit()
+            print("✅ Supabase 데이터베이스 초기화 완료")
 
     def save_extracted_data(self, filename: str, extracted_tables: List[Dict], prompt_used: str = None) -> int:
         """추출된 데이터를 데이터베이스에 저장 (중복 방지 및 검증 강화)"""
         saved_count = 0
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self.get_connection() as conn:
             cursor = conn.cursor()
 
             upload_date = datetime.now().strftime("%Y-%m-%d")
 
             # 기존 파일의 데이터 삭제 (중복 방지)
-            cursor.execute("DELETE FROM extracted_data WHERE filename = ?", (filename,))
-            cursor.execute("DELETE FROM upload_history WHERE filename = ?", (filename,))
+            cursor.execute("DELETE FROM extracted_data WHERE filename = %s", (filename,))
+            cursor.execute("DELETE FROM upload_history WHERE filename = %s", (filename,))
 
             valid_rows = []
 
@@ -84,7 +99,7 @@ class DatabaseManager:
                 # 파일 업로드 히스토리 저장
                 cursor.execute("""
                     INSERT INTO upload_history (filename, status, extracted_rows)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                 """, (filename, "success", len(valid_rows)))
 
                 for mapped_data in valid_rows:
@@ -93,7 +108,7 @@ class DatabaseManager:
                         (filename, upload_date, site_name, supplier, item_name, specification,
                          unit, quantity, unit_price, amount, tax_amount, total_amount,
                          currency, method, raw_data, prompt_used)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, mapped_data)
                     saved_count += 1
 
@@ -102,54 +117,11 @@ class DatabaseManager:
                 # 유효한 데이터가 없는 경우
                 cursor.execute("""
                     INSERT INTO upload_history (filename, status, extracted_rows)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                 """, (filename, "no_valid_data", 0))
                 conn.commit()
 
         return saved_count
-
-    def is_valid_data(self, mapped_data: tuple) -> bool:
-        """AI 우선 데이터 검증 - AI 처리 데이터는 더 관대하게 검증"""
-        # mapped_data 구조: (filename, upload_date, site_name, supplier, item_name, specification,
-        #                   unit, quantity, unit_price, amount, tax_amount, total_amount,
-        #                   currency, method, raw_data, prompt_used)
-
-        site_name = mapped_data[2].strip() if mapped_data[2] else ""
-        supplier = mapped_data[3].strip() if mapped_data[3] else ""
-        item_name = mapped_data[4].strip() if mapped_data[4] else ""
-        specification = mapped_data[5].strip() if mapped_data[5] else ""
-        quantity = mapped_data[7] if mapped_data[7] else 0
-        unit_price = mapped_data[8] if mapped_data[8] else 0
-        amount = mapped_data[9] if mapped_data[9] else 0
-        total_amount = mapped_data[11] if mapped_data[11] else 0
-
-        # AI 처리 실패 케이스 제외
-        if any(fail_indicator in item_name for fail_indicator in ["추출 실패", "AI 처리 실패", "텍스트 추출 실패"]):
-            print(f"❌ 검증 실패: AI 처리 오류 - {item_name}")
-            return False
-
-        # AI 데이터는 더 관대한 검증 (AI가 이미 의미있는 데이터만 추출했다고 가정)
-        has_supplier = len(supplier) > 1
-        has_site = len(site_name) > 1
-        has_item_info = len(item_name) > 1 or len(specification) > 1
-        has_numeric_data = quantity > 0 or unit_price > 0 or amount > 0 or total_amount > 0
-
-        # 더 유연한 검증: 공급자/현장명/품목/금액 중 2개 이상 있으면 유효
-        criteria_met = sum([has_supplier, has_site, has_item_info, has_numeric_data])
-
-        # 특별 케이스: 공급자만 있어도 회사 정보로서 가치 있음
-        if has_supplier and len(supplier) > 5:  # 의미있는 회사명
-            is_valid = True
-            print(f"✅ 검증 통과 (공급자 정보): {supplier} (총액: {total_amount:,.0f})")
-        # 일반 케이스: 2개 이상 조건 만족
-        elif criteria_met >= 2:
-            is_valid = True
-            print(f"✅ 검증 통과 ({criteria_met}/4 조건): {supplier} - {item_name} (총액: {total_amount:,.0f})")
-        else:
-            is_valid = False
-            print(f"❌ 검증 실패: 조건 부족 ({criteria_met}/4) - S:{supplier[:20]} I:{item_name[:20]}")
-
-        return is_valid
 
     def is_valid_data_enhanced(self, mapped_data: tuple) -> bool:
         """강화된 데이터 검증 - 공급자 구분 및 실제 거래 데이터만 허용"""
@@ -183,11 +155,6 @@ class DatabaseManager:
             print(f"⚠️ 금액 정보 없음 (허용): {supplier} - {item_name}")
         else:
             print(f"✅ 완전한 거래 데이터: {supplier} - {item_name} ({total_amount:,.0f}원)")
-
-        # 3. 유효한 공급자 목록 확인 (화이트리스트)
-        valid_supplier_keywords = ['에스피레미콘', '유진기업', '쌍용레미콘', '레미콘']
-        if not any(keyword in supplier for keyword in valid_supplier_keywords):
-            print(f"⚠️ 의심스러운 공급자 (확인 필요): {supplier}")
 
         print(f"✅ 유효한 거래 데이터: {supplier} - {item_name} ({total_amount:,.0f}원)")
         return True
@@ -259,22 +226,8 @@ class DatabaseManager:
 
             site_name = find_value_by_keys(row_data, key_mappings['site_name'])
             supplier = find_value_by_keys(row_data, key_mappings['supplier'])
-
-            # 품목과 규격 추출 (복합 필드 처리)
             item_name = find_value_by_keys(row_data, key_mappings['item_name'])
             specification = find_value_by_keys(row_data, key_mappings['specification'])
-
-            # 제품(규격) 복합 필드 처리
-            combined_product = find_value_by_keys(row_data, ['제품(규격)', '제 품(규 격)'])
-            if combined_product and not item_name:
-                # 규격 패턴 추출 (예: 25-35-180)
-                spec_pattern = re.search(r'(\d+-\d+-\d+)', combined_product)
-                if spec_pattern:
-                    specification = spec_pattern.group(1)
-                    item_name = combined_product.replace(specification, '').strip('-').strip()
-                else:
-                    item_name = combined_product
-
             unit = find_value_by_keys(row_data, key_mappings['unit'])
             quantity = safe_float(find_value_by_keys(row_data, key_mappings['quantity']))
             unit_price = safe_float(find_value_by_keys(row_data, key_mappings['unit_price']))
@@ -295,12 +248,12 @@ class DatabaseManager:
         return (
             filename, upload_date, site_name, supplier, item_name, specification,
             unit, quantity, unit_price, amount, tax_amount, total_amount,
-            'KRW', '대가건설', json.dumps(row_data, ensure_ascii=False), prompt_used or ""
+            'KRW', 'AI추출', json.dumps(row_data, ensure_ascii=False), prompt_used or ""
         )
 
     def get_all_data(self) -> List[Dict]:
         """저장된 모든 데이터 조회"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, filename, upload_date, site_name, supplier, item_name, specification,
@@ -315,13 +268,16 @@ class DatabaseManager:
 
             for row in cursor.fetchall():
                 row_dict = dict(zip(columns, row))
+                # datetime을 문자열로 변환
+                if row_dict.get('created_at'):
+                    row_dict['created_at'] = row_dict['created_at'].isoformat()
                 results.append(row_dict)
 
             return results
 
     def get_statistics(self) -> Dict:
         """통계 정보 조회"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self.get_connection() as conn:
             cursor = conn.cursor()
 
             # 총 레코드 수

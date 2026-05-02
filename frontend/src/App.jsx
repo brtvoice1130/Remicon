@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-// API URL 환경변수 설정 (개발: localhost, 프로덕션: 배포된 백엔드 URL)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// API URL 환경변수 설정 (개발: localhost, 프로덕션: Vercel /api)
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (window.location.hostname === 'localhost' ? 'http://localhost:8000' : '/api');
 
 function App() {
   const [file, setFile] = useState(null);

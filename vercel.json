@@ -1,7 +1,14 @@
 {
-  "name": "remicon-frontend",
+  "name": "remicon-fullstack",
   "version": 2,
   "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    },
     {
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
@@ -12,8 +19,16 @@
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "frontend/dist/$1"
+    },
+    {
+      "src": "/",
+      "dest": "frontend/dist/index.html"
     }
   ],
   "buildCommand": "cd frontend && npm install && npm run build",
