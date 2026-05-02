@@ -18,8 +18,8 @@
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "buildCommand": "npm run build",
-        "outputDirectory": "dist"
+        "buildCommand": "cd frontend && npm run build",
+        "outputDirectory": "frontend/dist"
       }
     }
   ],
@@ -33,11 +33,15 @@
       "dest": "api/test.py"
     },
     {
-      "src": "/statistics/(.*)",
+      "src": "/api/statistics/(.*)",
       "dest": "api/statistics.py"
     },
     {
-      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg)$)",
+      "src": "/assets/(.*)",
+      "dest": "frontend/dist/assets/$1"
+    },
+    {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$)",
       "dest": "frontend/dist/$1"
     },
     {
