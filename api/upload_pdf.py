@@ -141,12 +141,18 @@ class handler(BaseHTTPRequestHandler):
                         self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
                         return
 
-                # 성공 응답
+                # 성공 응답 (더 상세한 정보 포함)
                 response_data = {
                     "status": "success",
                     "filename": file_item.filename,
                     "tables": extracted_data,
-                    "saved_count": len(extracted_data)
+                    "saved_count": len(extracted_data),
+                    "debug_info": {
+                        "total_extracted": len(extracted_data),
+                        "api_key_present": bool(os.getenv("GOOGLE_API_KEY")),
+                        "first_item_keys": list(extracted_data[0].keys()) if extracted_data else [],
+                        "extraction_preview": str(extracted_data[0])[:200] if extracted_data else "No data"
+                    }
                 }
 
                 self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())

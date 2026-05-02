@@ -98,10 +98,11 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
                     ai_extracted_all.extend(page_extracted)
                     print(f"✅ Page {i+1}: {len(page_extracted)} records")
 
-        # AI 추출 결과 필터링 (실제 거래 데이터만)
+        # AI 추출 결과 필터링 (임시로 완화)
         filtered_results = []
         for result in ai_extracted_all:
-            if is_actual_transaction(result):
+            # 임시로 모든 데이터를 통과시켜서 테스트
+            if result and isinstance(result, dict):
                 filtered_results.append(result)
 
         print(f"🔍 AI 추출 완료: {len(ai_extracted_all)}개 → {len(filtered_results)}개 (실제 거래 데이터)")
