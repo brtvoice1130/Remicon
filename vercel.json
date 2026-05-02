@@ -18,7 +18,7 @@
       "src": "frontend/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "buildCommand": "npm run build && cp -r dist/* ../public/",
+        "buildCommand": "npm run build && ls -la dist/ && mkdir -p ../public && cp -r dist/. ../public/ && ls -la ../public/",
         "outputDirectory": "../public"
       }
     }
