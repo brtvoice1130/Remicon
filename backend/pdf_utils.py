@@ -7,6 +7,7 @@ import json
 import re
 import os
 import google.genai as genai
+from .db_manager import save_extracted_data
 
 # Google API 키 설정 (환경변수에서 가져오기)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -18,7 +19,7 @@ else:
     client = genai.Client(api_key=GOOGLE_API_KEY)
     print("✅ Google AI API 클라이언트 초기화 완료")
 
-def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
+def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool = False, save_to_db: bool = True) -> List[Dict]:
     """
     AI 전용 PDF 데이터 추출 시스템
     Google Gemini AI만 사용하여 PDF를 분석하고 구조화된 데이터를 추출합니다.
@@ -72,6 +73,19 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
             except Exception as e:
                 print(f"OCR failed for page {page_num + 1}: {e}")
 
+    # 디버깅 정보 수집
+    debug_info = {
+        "pdf_info": {
+            "total_pages": total_pages,
+            "text_length": len(all_text),
+            "has_tables": bool([page for page in pdf.pages for table in page.extract_tables() if table])
+        },
+        "extraction_steps": [],
+        "raw_ai_results": [],
+        "validation_results": [],
+        "text_preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
+    } if debug_mode else None
+
     # AI로 페이지별 텍스트 처리 (응답 길이 제한 해결)
     ai_extracted_all = []
     if page_texts:
@@ -80,6 +94,9 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
         for i, page_text in enumerate(page_texts):
             if page_text.strip():
                 print(f"📄 Processing page {i+1} with AI...")
+                if debug_mode:
+                    debug_info["extraction_steps"].append(f"Processing page {i+1} (text length: {len(page_text)})")
+
                 page_extracted = extract_with_ai(page_text, user_prompt)
                 if page_extracted:
                     # API 할당량 소진 즉시 감지 및 중단
@@ -95,31 +112,102 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
                                 "current_status": "현재 API 할당량이 소진된 상태입니다."
                             }]
 
+                    if debug_mode:
+                        debug_info["raw_ai_results"].extend(page_extracted)
+                        debug_info["extraction_steps"].append(f"Page {i+1}: extracted {len(page_extracted)} raw records")
+
                     ai_extracted_all.extend(page_extracted)
                     print(f"✅ Page {i+1}: {len(page_extracted)} records")
 
-        # AI 추출 결과 필터링 (임시로 완화)
+        # AI 추출 결과 필터링 및 유효성 검사
         filtered_results = []
-        for result in ai_extracted_all:
-            # 임시로 모든 데이터를 통과시켜서 테스트
-            if result and isinstance(result, dict):
-                filtered_results.append(result)
+        validation_details = []
 
-        print(f"🔍 AI 추출 완료: {len(ai_extracted_all)}개 → {len(filtered_results)}개 (실제 거래 데이터)")
+        for i, result in enumerate(ai_extracted_all):
+            if result and isinstance(result, dict):
+                # 유효성 검사
+                has_product_name = bool(result.get('품명', '').strip())
+                has_financial_data = bool(result.get('공급가액') or result.get('금액') or result.get('합계'))
+                has_quantity_data = bool(result.get('물량', 0) > 0)
+                has_date_data = bool(result.get('출하일', '').strip())
+
+                # 검증 결과 저장
+                validation_result = {
+                    "index": i,
+                    "has_product_name": has_product_name,
+                    "has_financial_data": has_financial_data,
+                    "has_quantity_data": has_quantity_data,
+                    "has_date_data": has_date_data,
+                    "data_preview": {k: v for k, v in list(result.items())[:5]}  # 처음 5개 필드만
+                }
+
+                # 품명이 없어도 수량, 금액, 날짜 중 하나라도 있으면 유효
+                is_valid = has_product_name or has_financial_data or has_quantity_data or has_date_data
+                validation_result["is_valid"] = is_valid
+
+                if debug_mode:
+                    validation_details.append(validation_result)
+
+                if is_valid:
+                    filtered_results.append(result)
+
+        if debug_mode:
+            debug_info["validation_results"] = validation_details
+            debug_info["extraction_steps"].append(f"Validation complete: {len(filtered_results)}/{len(ai_extracted_all)} records passed")
+
+        print(f"🔍 AI 추출 완료: {len(ai_extracted_all)}개 → {len(filtered_results)}개 (유효한 거래 데이터)")
 
         if filtered_results:
             print(f"✅ AI가 {len(filtered_results)}개의 유효한 거래 데이터를 추출했습니다")
-            return filtered_results
+
+            # DB 저장 옵션이 활성화된 경우
+            if save_to_db:
+                # 파일명 추출 (전체 경로에서 파일명만)
+                import os
+                filename = os.path.basename(file_path)
+
+                # DB에 저장
+                save_result = save_extracted_data(filename, filtered_results)
+
+                if debug_mode:
+                    return [{
+                        "status": "success",
+                        "data": filtered_results,
+                        "debug_info": debug_info,
+                        "db_save_result": save_result
+                    }]
+                else:
+                    # 저장 결과만 반환 (데이터는 DB에 있으므로 불필요)
+                    return [{
+                        "status": "success_saved",
+                        "message": save_result.get("message", "데이터가 저장되었습니다."),
+                        "saved_count": save_result.get("saved_count", 0),
+                        "filtered_count": save_result.get("filtered_count", 0),
+                        "filename": filename,
+                        "db_status": save_result.get("status", "unknown")
+                    }]
+            else:
+                # DB 저장하지 않고 데이터 반환
+                if debug_mode:
+                    return [{
+                        "status": "success",
+                        "data": filtered_results,
+                        "debug_info": debug_info
+                    }]
+                return filtered_results
         else:
             print("❌ AI가 유효한 거래 데이터를 찾지 못했습니다")
-            return [{
+            error_result = {
                 "api_error": False,
                 "error_type": "no_valid_data",
-                "error_message": "PDF에서 유효한 레미콘 거래 데이터를 찾을 수 없습니다.",
+                "error_message": "PDF에서 유효한 거래 데이터를 찾을 수 없습니다.",
                 "suggestion": "다른 PDF 파일을 시도하거나 프롬프트를 수정해보세요.",
                 "extracted_count": len(ai_extracted_all),
                 "valid_count": len(filtered_results)
-            }]
+            }
+            if debug_mode:
+                error_result["debug_info"] = debug_info
+            return [error_result]
     else:
         print("❌ PDF에서 텍스트를 추출할 수 없습니다")
         return [{
@@ -470,31 +558,41 @@ JSON만 반환:
 """
         else:
             prompt = f"""
-다음 건설/레미콘 거래명세서/세금계산서에서 실제 거래 데이터를 JSON 배열로 추출하세요.
+다음 건설/레미콘 거래명세서/세금계산서에서 유효한 거래 데이터만을 JSON 배열로 추출하세요.
 
 {text}
 
-🎯 추출 목표:
-- 모든 거래 내역 라인 (레미콘, 건설자재, 서비스 등)
-- 날짜, 수량, 금액 정보가 포함된 모든 거래 행
-- 품명이 없어도 거래 데이터(수량/금액)가 있으면 모두 포함
-- 헤더나 합계 행은 제외
+🎯 선별적 추출 원칙:
+- 실제 거래 내역만 추출 (헤더, 합계, 메타데이터 제외)
+- 최소한 다음 중 2개 이상이 있는 행만 추출:
+  * 금액 데이터 (공급가액 또는 합계)
+  * 수량 데이터 (물량)
+  * 날짜 정보 (출하일)
+  * 품명 정보
+- 의미있는 거래 데이터만 포함
 
-📋 추출 필드:
-- 출하일: 납품/출하 날짜 (2026-03-16, 03/16 등 형식) - 없으면 빈 문자열
-- 품명: 품목명 ("레미콘", "콘크리트", "철근" 등) - 🔴 없으면 빈 문자열로 처리
-- 규격: 강도 등급이나 사양 (25-35-180 등) - 없으면 빈 문자열
-- 물량: 공급 수량 (숫자만, 소수점 포함 가능) - 없으면 0
-- 단위: 수량 단위 (M3, ㎥, EA, 개 등) - 없으면 빈 문자열
-- 단가: 단위당 가격 - 없으면 0
-- 공급가액: 공급 금액 (세전) - 없으면 0
-- 세액: 부가세 - 없으면 0
-- 합계: 총 금액 (세포함) - 없으면 0
+📋 필수 추출 필드:
+- 출하일: 납품/출하 날짜 (YYYY-MM-DD 형식 선호)
+- 품명: 구체적인 품목명 (일반적인 단어는 제외)
+- 규격: 사양/등급 정보
+- 물량: 공급 수량 (양수만)
+- 단위: 수량 단위
+- 단가: 단위당 가격 (양수만)
+- 공급가액: 공급 금액 (양수만)
+- 세액: 부가세 (0 이상)
+- 합계: 총 금액 (양수만)
 
-❗❗ 핵심 원칙:
-- 품명이 비어있어도 OK! 수량이나 금액만 있어도 유효한 거래로 추출
-- 숫자 데이터(물량, 금액)가 있는 모든 라인을 포함
-- "품명 없음" 보다는 빈 문자열 "" 사용
+🔍 품질 기준:
+- 공급가액이나 합계 중 하나는 반드시 0보다 큰 값
+- 물량이 있으면 반드시 0보다 큰 값
+- 명확하지 않은 데이터는 제외
+- 테스트/샘플 데이터는 제외
+
+⚠️ 제외 항목:
+- 컬럼 제목 행
+- 소계/합계 행
+- 회사 정보
+- 불완전한 데이터 행
 
 🏢 회사 정보:
 - 공급자: 문서 상단의 공급하는 회사명 찾기

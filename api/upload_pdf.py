@@ -83,9 +83,11 @@ class handler(BaseHTTPRequestHandler):
                 'CONTENT_LENGTH': str(content_length)
             })
 
-            # 파일과 프롬프트 추출
+            # 파일, 프롬프트, 디버그 모드, DB 저장 옵션 추출
             file_item = form['file'] if 'file' in form else None
             prompt = form['prompt'].value if 'prompt' in form else None
+            debug_mode = form['debug'].value.lower() == 'true' if 'debug' in form else False
+            save_to_db = form['save_db'].value.lower() != 'false' if 'save_db' in form else True  # 기본값: True
 
             if not file_item or not file_item.filename:
                 raise ValueError("파일이 업로드되지 않았습니다")
@@ -101,14 +103,46 @@ class handler(BaseHTTPRequestHandler):
                 print(f"🔑 API Key configured: {bool(os.getenv('GOOGLE_API_KEY'))}")
 
                 # PDF 처리
-                extracted_data = extract_pdf_tables(temp_path, prompt)
+                extracted_data = extract_pdf_tables(temp_path, prompt, debug_mode, save_to_db)
+
+                # Debug 모드에서는 다른 데이터 구조 처리
+                if debug_mode and extracted_data and isinstance(extracted_data[0], dict) and extracted_data[0].get('status') == 'success':
+                    debug_result = extracted_data[0]
+                    response_data = {
+                        "status": "debug_success",
+                        "filename": file_item.filename,
+                        "tables": debug_result.get('data', []),
+                        "saved_count": len(debug_result.get('data', [])),
+                        "debug_info": debug_result.get('debug_info', {}),
+                        "extraction_details": {
+                            "total_extracted": len(debug_result.get('debug_info', {}).get('raw_ai_results', [])),
+                            "validation_passed": len(debug_result.get('data', [])),
+                            "validation_failed": len(debug_result.get('debug_info', {}).get('raw_ai_results', [])) - len(debug_result.get('data', []))
+                        }
+                    }
+                    self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
+                    return
 
                 print(f"✅ Extraction completed: {len(extracted_data)} records")
                 print(f"📊 Raw extraction result: {extracted_data[:2] if extracted_data else 'No data'}")
 
-                # API 에러 처리
+                # DB 저장 완료 응답 처리
                 if extracted_data and isinstance(extracted_data[0], dict):
                     first_item = extracted_data[0]
+
+                    # DB 저장 성공 응답
+                    if first_item.get('status') == 'success_saved':
+                        response_data = {
+                            "status": "success",
+                            "message": first_item.get('message'),
+                            "filename": file_item.filename,
+                            "saved_count": first_item.get('saved_count', 0),
+                            "filtered_count": first_item.get('filtered_count', 0),
+                            "db_status": first_item.get('db_status'),
+                            "tables": []  # 데이터는 DB에 저장됨
+                        }
+                        self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
+                        return
 
                     # API 할당량 초과 확인
                     if first_item.get('api_error') and first_item.get('error_type') == 'quota_exceeded':
@@ -118,6 +152,8 @@ class handler(BaseHTTPRequestHandler):
                             "recovery_time": first_item.get('recovery_time'),
                             "recovery_message": first_item.get('recovery_message')
                         }
+                        if debug_mode and first_item.get('debug_info'):
+                            response_data["debug_info"] = first_item.get('debug_info')
                         self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
                         return
 
@@ -131,13 +167,17 @@ class handler(BaseHTTPRequestHandler):
                         self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
                         return
 
-                    # 추출 실패 확인
+                    # 추출 실패 확인 (Debug 정보 포함)
                     if first_item.get('api_error') == False and first_item.get('error_type'):
                         response_data = {
                             "status": "extraction_failed",
                             "error": first_item.get('error_message'),
-                            "suggestion": first_item.get('suggestion')
+                            "suggestion": first_item.get('suggestion'),
+                            "extracted_count": first_item.get('extracted_count', 0),
+                            "valid_count": first_item.get('valid_count', 0)
                         }
+                        if debug_mode and first_item.get('debug_info'):
+                            response_data["debug_info"] = first_item.get('debug_info')
                         self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
                         return
 
@@ -147,6 +187,7 @@ class handler(BaseHTTPRequestHandler):
                     "filename": file_item.filename,
                     "tables": extracted_data,
                     "saved_count": len(extracted_data),
+                    "debug_mode": debug_mode,
                     "debug_info": {
                         "total_extracted": len(extracted_data),
                         "api_key_present": bool(os.getenv("GOOGLE_API_KEY")),

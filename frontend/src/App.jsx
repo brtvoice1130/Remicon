@@ -157,13 +157,19 @@ function App() {
     setError("");
   };
 
-  const handleUpload = async () => {
+  const handleUpload = async (debugMode = false, saveToDb = true) => {
     if (!file) return;
     setLoading(true);
     setError("");
     const formData = new FormData();
     formData.append("file", file);
     formData.append("prompt", settings.prompt);
+    if (debugMode) {
+      formData.append("debug", "true");
+    }
+    if (!saveToDb) {
+      formData.append("save_db", "false");
+    }
     try {
       const res = await axios.post(
         `${API_BASE_URL}/upload_pdf`,
@@ -196,12 +202,65 @@ function App() {
         return;
       }
 
-      // 실제 추출 데이터를 화면에 표시하고 팝업으로 결과 표시
-      setResult(res.data);
-      if (res.data.tables && res.data.tables.length > 0) {
-        showNotification(`🤖 AI가 ${res.data.tables.length}개 레코드를 추출했습니다! 아래에서 확인하세요.`);
+      // Debug 모드 응답 처리
+      if (res.data.status === "debug_success") {
+        setResult(res.data);
+        setSelectedExtraction({
+          filename: res.data.filename,
+          extraction_time: new Date().toISOString(),
+          ai_results: res.data.debug_info.raw_ai_results || [],
+          analysis: {
+            total_extracted: res.data.extraction_details.total_extracted,
+            complete_records: res.data.extraction_details.validation_passed,
+            empty_records: res.data.extraction_details.validation_failed
+          },
+          debug_details: res.data.debug_info
+        });
+        setShowAiDebug(true);
+        showNotification(`🔍 디버그 모드: ${res.data.extraction_details.total_extracted}개 추출, ${res.data.extraction_details.validation_passed}개 유효`, "success");
+        return;
+      }
+
+      // 추출 실패 디버그 정보 처리
+      if (res.data.status === "extraction_failed" && res.data.debug_info) {
+        setSelectedExtraction({
+          filename: file.name,
+          extraction_time: new Date().toISOString(),
+          ai_results: res.data.debug_info.raw_ai_results || [],
+          analysis: {
+            total_extracted: res.data.extracted_count || 0,
+            complete_records: res.data.valid_count || 0,
+            empty_records: (res.data.extracted_count || 0) - (res.data.valid_count || 0)
+          },
+          debug_details: res.data.debug_info,
+          error_details: {
+            message: res.data.error,
+            suggestion: res.data.suggestion
+          }
+        });
+        setShowAiDebug(true);
+        showNotification(`🔍 디버그: 추출 실패 분석 완료`, "warning");
+        return;
+      }
+
+      // DB 저장 완료 처리
+      if (res.data.saved_count > 0) {
+        setResult(null); // DB에 저장되었으므로 화면에 표시할 데이터 없음
+        showNotification(
+          `✅ ${res.data.saved_count}개 레코드가 DB에 저장되었습니다! ${res.data.filtered_count > 0 ? `(${res.data.filtered_count}개 추가 필터링됨)` : ''}`,
+          "success"
+        );
+        // 저장 후 데이터 목록 새로고침
+        fetchSavedData();
+        fetchStatistics();
       } else {
-        showNotification(`PDF를 업로드했지만 유효한 데이터가 없습니다.`, "warning");
+        // 실제 추출 데이터를 화면에 표시 (디버그 모드나 저장 실패 시)
+        setResult(res.data);
+        if (res.data.tables && res.data.tables.length > 0) {
+          showNotification(`🤖 AI가 ${res.data.tables.length}개 레코드를 추출했습니다! 아래에서 확인하세요.`);
+        } else {
+          showNotification(`PDF를 업로드했지만 유효한 데이터가 없습니다.`, "warning");
+        }
       }
     } catch (err) {
       // 디버깅용 로그 추가
@@ -1182,25 +1241,48 @@ function App() {
                 onChange={handleFileChange}
                 className="file-input"
               />
-              <button
-                className="upload-button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUpload();
-                }}
-                disabled={loading || !file}
-              >
-                {loading ? (
-                  <>
-                    <span className="loading-spinner"></span>
-                    업로드 중...
-                  </>
-                ) : (
-                  <>
-                    🚀 업로드 및 추출
-                  </>
-                )}
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  className="upload-button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUpload();
+                  }}
+                  disabled={loading || !file}
+                >
+                  {loading ? (
+                    <>
+                      <span className="loading-spinner"></span>
+                      처리 중...
+                    </>
+                  ) : (
+                    <>
+                      💾 추출하여 DB 저장
+                    </>
+                  )}
+                </button>
+
+                <button
+                  className="upload-button"
+                  style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUpload(false, false);
+                  }}
+                  disabled={loading || !file}
+                >
+                  {loading ? (
+                    <>
+                      <span className="loading-spinner"></span>
+                      처리 중...
+                    </>
+                  ) : (
+                    <>
+                      👁️ 미리보기만
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {file && (
@@ -1221,10 +1303,17 @@ function App() {
             <div className="debug-controls">
               <button
                 className="btn btn-debug"
+                onClick={() => handleUpload(true)}
+                disabled={loading || !file}
+              >
+                🔍 디버그 모드로 업로드
+              </button>
+              <button
+                className="btn btn-secondary"
                 onClick={testAiExtraction}
                 disabled={loading || !file}
               >
-                🔍 AI 추출 디버그
+                🧪 AI 추출 테스트
               </button>
               <button
                 className="btn btn-secondary"
@@ -1278,8 +1367,64 @@ function App() {
                         <span className="label">빈 레코드:</span>
                         <span className="value">{selectedExtraction.analysis?.empty_records || 0}</span>
                       </div>
+                      {selectedExtraction.debug_details?.pdf_info && (
+                        <>
+                          <div className="info-item">
+                            <span className="label">PDF 페이지:</span>
+                            <span className="value">{selectedExtraction.debug_details.pdf_info.total_pages}페이지</span>
+                          </div>
+                          <div className="info-item">
+                            <span className="label">텍스트 길이:</span>
+                            <span className="value">{selectedExtraction.debug_details.pdf_info.text_length.toLocaleString()}자</span>
+                          </div>
+                          <div className="info-item">
+                            <span className="label">테이블 존재:</span>
+                            <span className="value">{selectedExtraction.debug_details.pdf_info.has_tables ? '예' : '아니오'}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
+
+                  {selectedExtraction.error_details && (
+                    <div className="error-details">
+                      <h4>❌ 오류 상세</h4>
+                      <div style={{ background: '#fef2f2', padding: '1rem', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                        <p style={{ color: '#dc2626', fontWeight: '600', marginBottom: '0.5rem' }}>
+                          {selectedExtraction.error_details.message}
+                        </p>
+                        <p style={{ color: '#7f1d1d', fontSize: '0.875rem' }}>
+                          💡 {selectedExtraction.error_details.suggestion}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedExtraction.debug_details?.extraction_steps && (
+                    <div className="extraction-steps">
+                      <h4>🔄 추출 과정</h4>
+                      <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        {selectedExtraction.debug_details.extraction_steps.map((step, index) => (
+                          <div key={index} style={{ padding: '0.25rem 0', borderBottom: index < selectedExtraction.debug_details.extraction_steps.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
+                            <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                              {index + 1}. {step}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedExtraction.debug_details?.text_preview && (
+                    <div className="text-preview">
+                      <h4>📄 PDF 텍스트 미리보기</h4>
+                      <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '200px', overflowY: 'auto' }}>
+                        <pre style={{ fontSize: '0.8rem', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>
+                          {selectedExtraction.debug_details.text_preview}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="suppliers-info">
                     <h4>🏢 발견된 공급자</h4>
@@ -1291,6 +1436,66 @@ function App() {
                       ))}
                     </div>
                   </div>
+
+                  {selectedExtraction.debug_details?.validation_results && (
+                    <div className="validation-results">
+                      <h4>✅ 유효성 검사 결과</h4>
+                      <div className="raw-data-scroll">
+                        <table className="raw-data-table">
+                          <thead>
+                            <tr>
+                              <th>순번</th>
+                              <th>품명</th>
+                              <th>금액</th>
+                              <th>수량</th>
+                              <th>날짜</th>
+                              <th>유효성</th>
+                              <th>데이터 미리보기</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedExtraction.debug_details.validation_results.slice(0, 15).map((item, index) => (
+                              <tr key={index} className={!item.is_valid ? 'incomplete-row' : ''}>
+                                <td>{item.index + 1}</td>
+                                <td>
+                                  <span className={item.has_product_name ? 'status complete' : 'status incomplete'}>
+                                    {item.has_product_name ? '✅' : '❌'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={item.has_financial_data ? 'status complete' : 'status incomplete'}>
+                                    {item.has_financial_data ? '✅' : '❌'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={item.has_quantity_data ? 'status complete' : 'status incomplete'}>
+                                    {item.has_quantity_data ? '✅' : '❌'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={item.has_date_data ? 'status complete' : 'status incomplete'}>
+                                    {item.has_date_data ? '✅' : '❌'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className={`status ${item.is_valid ? 'complete' : 'incomplete'}`}>
+                                    {item.is_valid ? '✅ 통과' : '❌ 실패'}
+                                  </span>
+                                </td>
+                                <td style={{ fontSize: '0.75rem', maxWidth: '200px' }}>
+                                  {Object.entries(item.data_preview || {}).map(([key, value]) => (
+                                    <div key={key}>
+                                      <strong>{key}:</strong> {value || '(빈 값)'}
+                                    </div>
+                                  ))}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="raw-data-section">
                     <h4>📄 원본 AI 추출 데이터 (처음 10개)</h4>
