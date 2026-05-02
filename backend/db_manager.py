@@ -14,7 +14,7 @@ else:
     supabase = None
     print("⚠️ Supabase 환경변수가 설정되지 않았습니다.")
 
-def save_extracted_data(filename: str, extracted_records: List[Dict]) -> Dict:
+def save_extracted_data(filename: str, extracted_records: List[Dict], clear_before_save: bool = False) -> Dict:
     """
     추출된 PDF 데이터를 DB에 저장합니다.
     유효한 거래 데이터만 필터링해서 저장합니다.
@@ -34,6 +34,14 @@ def save_extracted_data(filename: str, extracted_records: List[Dict]) -> Dict:
         }
 
     try:
+        # 업로드 전 DB 초기화 (옵션)
+        if clear_before_save:
+            clear_success = clear_all_data()
+            if clear_success:
+                print("✅ 업로드 전 DB 초기화 완료")
+            else:
+                print("⚠️ DB 초기화 실패했지만 계속 진행")
+
         # 현재 시간으로 업로드 날짜 설정
         upload_date = datetime.now().isoformat()
 

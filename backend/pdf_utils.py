@@ -19,7 +19,7 @@ else:
     client = genai.Client(api_key=GOOGLE_API_KEY)
     print("✅ Google AI API 클라이언트 초기화 완료")
 
-def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool = False, save_to_db: bool = True) -> List[Dict]:
+def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool = False, save_to_db: bool = True, clear_before_save: bool = False) -> List[Dict]:
     """
     AI 전용 PDF 데이터 추출 시스템
     Google Gemini AI만 사용하여 PDF를 분석하고 구조화된 데이터를 추출합니다.
@@ -167,7 +167,7 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool
                 filename = os.path.basename(file_path)
 
                 # DB에 저장
-                save_result = save_extracted_data(filename, filtered_results)
+                save_result = save_extracted_data(filename, filtered_results, clear_before_save)
 
                 if debug_mode:
                     return [{

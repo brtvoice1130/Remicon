@@ -88,6 +88,7 @@ class handler(BaseHTTPRequestHandler):
             prompt = form['prompt'].value if 'prompt' in form else None
             debug_mode = form['debug'].value.lower() == 'true' if 'debug' in form else False
             save_to_db = form['save_db'].value.lower() != 'false' if 'save_db' in form else True  # 기본값: True
+            clear_before_save = form['clear_db'].value.lower() != 'false' if 'clear_db' in form else True  # 기본값: True (매번 초기화)
 
             if not file_item or not file_item.filename:
                 raise ValueError("파일이 업로드되지 않았습니다")
@@ -103,7 +104,7 @@ class handler(BaseHTTPRequestHandler):
                 print(f"🔑 API Key configured: {bool(os.getenv('GOOGLE_API_KEY'))}")
 
                 # PDF 처리
-                extracted_data = extract_pdf_tables(temp_path, prompt, debug_mode, save_to_db)
+                extracted_data = extract_pdf_tables(temp_path, prompt, debug_mode, save_to_db, clear_before_save)
 
                 # Debug 모드에서는 다른 데이터 구조 처리
                 if debug_mode and extracted_data and isinstance(extracted_data[0], dict) and extracted_data[0].get('status') == 'success':

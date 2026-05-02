@@ -157,19 +157,20 @@ function App() {
     setError("");
   };
 
-  const handleUpload = async (debugMode = false, saveToDb = true) => {
+  const handleUpload = async (debugMode = false) => {
     if (!file) return;
     setLoading(true);
     setError("");
+    setResult(null); // 기존 결과 초기화
     const formData = new FormData();
     formData.append("file", file);
     formData.append("prompt", settings.prompt);
     if (debugMode) {
       formData.append("debug", "true");
     }
-    if (!saveToDb) {
-      formData.append("save_db", "false");
-    }
+    // 무조건 DB에 저장하고, 업로드 시마다 DB 초기화
+    formData.append("save_db", "true");
+    formData.append("clear_db", "true");
     try {
       const res = await axios.post(
         `${API_BASE_URL}/upload_pdf`,
@@ -243,18 +244,23 @@ function App() {
         return;
       }
 
-      // DB 저장 완료 처리
-      if (res.data.saved_count > 0) {
-        setResult(null); // DB에 저장되었으므로 화면에 표시할 데이터 없음
-        showNotification(
-          `✅ ${res.data.saved_count}개 레코드가 DB에 저장되었습니다! ${res.data.filtered_count > 0 ? `(${res.data.filtered_count}개 추가 필터링됨)` : ''}`,
-          "success"
-        );
-        // 저장 후 데이터 목록 새로고침
-        fetchSavedData();
+      // DB 저장 완료 처리 (무조건 저장 모드)
+      if (res.data.saved_count !== undefined) {
+        if (res.data.saved_count > 0) {
+          showNotification(
+            `✅ PDF 처리 완료! ${res.data.saved_count}개 레코드가 DB에 저장되었습니다. 조회 버튼을 클릭해서 확인하세요.`,
+            "success"
+          );
+        } else {
+          showNotification(
+            `⚠️ PDF 처리 완료! 하지만 유효한 데이터가 없어 저장되지 않았습니다.`,
+            "warning"
+          );
+        }
+        // 통계만 업데이트 (데이터는 조회 버튼으로만 표시)
         fetchStatistics();
       } else {
-        // 실제 추출 데이터를 화면에 표시 (디버그 모드나 저장 실패 시)
+        // 실제 추출 데이터를 화면에 표시 (디버그 모드인 경우)
         setResult(res.data);
         if (res.data.tables && res.data.tables.length > 0) {
           showNotification(`🤖 AI가 ${res.data.tables.length}개 레코드를 추출했습니다! 아래에서 확인하세요.`);
@@ -1241,48 +1247,25 @@ function App() {
                 onChange={handleFileChange}
                 className="file-input"
               />
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button
-                  className="upload-button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUpload();
-                  }}
-                  disabled={loading || !file}
-                >
-                  {loading ? (
-                    <>
-                      <span className="loading-spinner"></span>
-                      처리 중...
-                    </>
-                  ) : (
-                    <>
-                      💾 추출하여 DB 저장
-                    </>
-                  )}
-                </button>
-
-                <button
-                  className="upload-button"
-                  style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleUpload(false, false);
-                  }}
-                  disabled={loading || !file}
-                >
-                  {loading ? (
-                    <>
-                      <span className="loading-spinner"></span>
-                      처리 중...
-                    </>
-                  ) : (
-                    <>
-                      👁️ 미리보기만
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                className="upload-button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleUpload();
+                }}
+                disabled={loading || !file}
+              >
+                {loading ? (
+                  <>
+                    <span className="loading-spinner"></span>
+                    처리 중...
+                  </>
+                ) : (
+                  <>
+                    🚀 PDF 분석하여 저장
+                  </>
+                )}
+              </button>
             </div>
 
             {file && (
@@ -1298,31 +1281,25 @@ function App() {
             )}
           </div>
 
-          {/* AI Debug Section */}
-          <div className="ai-debug-section">
-            <div className="debug-controls">
+          {/* Control Section */}
+          <div className="controls-section">
+            <div className="button-group">
+              <button
+                className="btn btn-success"
+                onClick={() => {
+                  fetchSavedData();
+                  fetchStatistics();
+                  showNotification("저장된 데이터를 조회했습니다!");
+                }}
+              >
+                📊 저장된 데이터 조회
+              </button>
               <button
                 className="btn btn-debug"
                 onClick={() => handleUpload(true)}
                 disabled={loading || !file}
               >
-                🔍 디버그 모드로 업로드
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={testAiExtraction}
-                disabled={loading || !file}
-              >
-                🧪 AI 추출 테스트
-              </button>
-              <button
-                className="btn btn-secondary"
-                onClick={() => {
-                  fetchAiExtractions();
-                  setShowAiDebug(true);
-                }}
-              >
-                📊 추출 내역 조회
+                🔍 디버그 모드
               </button>
             </div>
           </div>
@@ -1698,18 +1675,8 @@ function App() {
           {/* Data Management Section */}
           <div className="saved-data-section">
             <div className="results-header">
-              <h2 className="results-title">📊 데이터 관리</h2>
+              <h2 className="results-title">📊 저장된 데이터</h2>
               <div className="button-group">
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    fetchSavedData();
-                    fetchStatistics();
-                    showNotification("데이터를 조회했습니다!");
-                  }}
-                >
-                  🔍 조회
-                </button>
                 <button
                   className="btn btn-success"
                   onClick={() => {
