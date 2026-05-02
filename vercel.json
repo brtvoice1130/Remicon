@@ -19,6 +19,10 @@
   ],
   "routes": [
     {
+      "src": "/api/hello",
+      "dest": "api/hello.py"
+    },
+    {
       "src": "/api/test",
       "dest": "api/test.py"
     },
