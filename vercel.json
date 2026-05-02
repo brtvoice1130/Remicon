@@ -64,6 +64,20 @@
       "dest": "api/ai-extractions.py"
     },
     {
+      "src": "/index-(.+)\\.js",
+      "dest": "/index-$1.js",
+      "headers": {
+        "Content-Type": "application/javascript"
+      }
+    },
+    {
+      "src": "/.*\\.(js|css|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot)$",
+      "dest": "/$0",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
     }
