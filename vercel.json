@@ -25,5 +25,43 @@
       "src": "api/ai-extractions.py",
       "use": "@vercel/python"
     }
+  ],
+  "routes": [
+    {
+      "src": "/api/upload_pdf",
+      "dest": "api/upload_pdf.py"
+    },
+    {
+      "src": "/api/data",
+      "dest": "api/data.py"
+    },
+    {
+      "src": "/api/ai-extractions/(.*)",
+      "dest": "api/ai-extractions.py"
+    },
+    {
+      "src": "/api/hello",
+      "dest": "api/hello.py"
+    },
+    {
+      "src": "/api/test",
+      "dest": "api/test.py"
+    },
+    {
+      "src": "/api/statistics",
+      "dest": "api/statistics.py"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "/assets/$1"
+    },
+    {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$)",
+      "dest": "/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
