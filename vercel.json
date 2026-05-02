@@ -1,15 +1,19 @@
 {
-  "functions": {
-    "api/hello.py": {
-      "runtime": "@vercel/python"
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/hello.py",
+      "use": "@vercel/python"
     },
-    "api/test.py": {
-      "runtime": "@vercel/python"
+    {
+      "src": "api/test.py",
+      "use": "@vercel/python"
     },
-    "api/statistics.py": {
-      "runtime": "@vercel/python"
+    {
+      "src": "api/statistics.py",
+      "use": "@vercel/python"
     }
-  },
+  ],
   "routes": [
     {
       "src": "/api/hello",
