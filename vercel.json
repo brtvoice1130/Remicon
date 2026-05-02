@@ -3,11 +3,16 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/*.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
+      "src": "api/hello.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/test.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/statistics.py",
+      "use": "@vercel/python"
     },
     {
       "src": "frontend/package.json",
