@@ -6,22 +6,34 @@ import io
 import json
 import re
 import os
-import google.generativeai as genai
+import google.genai as genai
 
 # Google API 키 설정 (환경변수에서 가져오기)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     print("⚠️ GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.")
     print("설정 방법: export GOOGLE_API_KEY='your_api_key'")
+    client = None
 else:
-    genai.configure(api_key=GOOGLE_API_KEY)
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+    print("✅ Google AI API 클라이언트 초기화 완료")
 
 def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
     """
-    AI 우선 PDF 데이터 추출 시스템
-    Google Gemini AI가 메인으로 모든 텍스트를 분석하고 구조화된 데이터를 추출합니다.
+    AI 전용 PDF 데이터 추출 시스템
+    Google Gemini AI만 사용하여 PDF를 분석하고 구조화된 데이터를 추출합니다.
+    API 제한 시 작업을 중단하고 사용자에게 안내합니다.
     """
-    print("🤖 AI-First PDF Processing Started")
+    print("🤖 AI-Only PDF Processing Started")
+
+    # API 클라이언트 사전 확인
+    if client is None:
+        return [{
+            "api_error": True,
+            "error_type": "api_not_configured",
+            "error_message": "Google AI API 클라이언트가 설정되지 않았습니다.",
+            "action_required": "GOOGLE_API_KEY 환경변수를 확인해주세요."
+        }]
 
     # 모든 페이지의 텍스트 추출
     all_text = ""
@@ -70,88 +82,52 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None) -> List[Dict]:
                 print(f"📄 Processing page {i+1} with AI...")
                 page_extracted = extract_with_ai(page_text, user_prompt)
                 if page_extracted:
-                    # API 할당량 소진 확인 - 즉시 중단하고 사용자에게 안내
-                    if any(item.get('api_quota_exceeded') for item in page_extracted):
-                        print("❌ API 할당량이 소진되어 처리를 중단합니다")
-                        print("💡 할당량은 매일 오전 9시(한국시간)에 복구됩니다")
-                        return page_extracted  # 할당량 소진 안내와 함께 즉시 반환
+                    # API 할당량 소진 즉시 감지 및 중단
+                    for item in page_extracted:
+                        if item.get('api_quota_exceeded'):
+                            print("🚫 API 할당량 소진됨 - 작업 즉시 중단")
+                            return [{
+                                "api_error": True,
+                                "error_type": "quota_exceeded",
+                                "error_message": "API 사용량 제한으로 프로그램 이용이 제한됩니다.",
+                                "recovery_time": "매일 오전 9시 (한국시간)",
+                                "recovery_message": "오전 9시 이후에 다시 이용해주세요.",
+                                "current_status": "현재 API 할당량이 소진된 상태입니다."
+                            }]
 
                     ai_extracted_all.extend(page_extracted)
                     print(f"✅ Page {i+1}: {len(page_extracted)} records")
 
-        # AI 추출 성공 기준을 유연하게 조정 (API 할당량 고려)
-        if len(ai_extracted_all) >= 15:  # 완전한 추출 (모든 페이지 AI 처리)
-            print(f"✅ AI extracted {len(ai_extracted_all)} total structured records (완전)")
-            return ai_extracted_all
-        elif len(ai_extracted_all) >= 3 and any(r.get('품명') and r.get('공급가액') for r in ai_extracted_all):
-            # 일부 페이지라도 완전한 데이터가 있으면 성공으로 처리
-            print(f"✅ AI extracted {len(ai_extracted_all)} records (부분 성공 - API 할당량 제한)")
-            return ai_extracted_all
+        # AI 추출 결과 필터링 (실제 거래 데이터만)
+        filtered_results = []
+        for result in ai_extracted_all:
+            if is_actual_transaction(result):
+                filtered_results.append(result)
+
+        print(f"🔍 AI 추출 완료: {len(ai_extracted_all)}개 → {len(filtered_results)}개 (실제 거래 데이터)")
+
+        if filtered_results:
+            print(f"✅ AI가 {len(filtered_results)}개의 유효한 거래 데이터를 추출했습니다")
+            return filtered_results
         else:
-            print(f"❌ AI processing: Only {len(ai_extracted_all)} incomplete records, falling back to traditional extraction")
-
-    # AI 실패시 강력한 백업: 전통적 테이블 추출
-    print("🔄 Fallback: Using traditional multi-page table extraction")
-    traditional_results = []
-
-    with pdfplumber.open(file_path) as pdf:
-        supplier_info = ""
-        site_info = ""
-
-        for page_num, page in enumerate(pdf.pages):
-            print(f"📄 Fallback processing page {page_num + 1}")
-
-            # 전통적 테이블 추출
-            tables = page.extract_tables()
-            if tables:
-                for table_idx, table in enumerate(tables):
-                    if table and len(table) > 1:
-                        headers = table[0]
-
-                        # 공급자/현장 정보 추출
-                        page_supplier = extract_supplier_info(table, headers)
-                        if page_supplier:
-                            supplier_info = page_supplier
-
-                        page_site = extract_site_info(table, headers)
-                        if page_site:
-                            site_info = page_site
-
-                        # 데이터 행 처리
-                        for row_idx, row in enumerate(table[1:]):
-                            if row and any(cell for cell in row if cell):
-                                row_dict = {}
-                                for i in range(min(len(headers), len(row))):
-                                    if headers[i]:
-                                        row_dict[headers[i]] = row[i] if row[i] else ""
-
-                                # 필터링 및 검증
-                                if not is_summary_row(row_dict) and has_meaningful_data(row_dict):
-                                    if supplier_info:
-                                        row_dict['공급자'] = supplier_info
-                                    if site_info:
-                                        row_dict['현장명'] = site_info
-
-                                    print(f"📋 Page {page_num + 1} - Valid record: {supplier_info} - {row_dict.get('품목', 'N/A')}")
-                                    traditional_results.append(row_dict)
-
-    print(f"🔄 Traditional extraction: {len(traditional_results)} records")
-
-    # 전통적 추출도 실패시 최종 백업
-    if not traditional_results:
-        print("⚠️ Final fallback: Manual text parsing")
-        traditional_results = parse_text_manually(all_text) if all_text else []
-
-    if not traditional_results:
-        traditional_results.append({
-            "공급자": "추출 실패",
-            "품명": "모든 방법 실패",
-            "현장명": "확인 필요",
-            "물량": 0, "단가": 0, "공급가액": 0, "세액": 0, "합계": 0
-        })
-
-    print(f"Total extracted records: {len(traditional_results)}")
-    return traditional_results
+            print("❌ AI가 유효한 거래 데이터를 찾지 못했습니다")
+            return [{
+                "api_error": False,
+                "error_type": "no_valid_data",
+                "error_message": "PDF에서 유효한 레미콘 거래 데이터를 찾을 수 없습니다.",
+                "suggestion": "다른 PDF 파일을 시도하거나 프롬프트를 수정해보세요.",
+                "extracted_count": len(ai_extracted_all),
+                "valid_count": len(filtered_results)
+            }]
+    else:
+        print("❌ PDF에서 텍스트를 추출할 수 없습니다")
+        return [{
+            "api_error": False,
+            "error_type": "no_text_extracted",
+            "error_message": "PDF에서 텍스트를 읽을 수 없습니다.",
+            "suggestion": "PDF 파일이 올바른지 확인하고 다시 시도해주세요.",
+            "possible_causes": ["스캔된 이미지 PDF", "암호화된 PDF", "손상된 파일"]
+        }]
 
 
 def extract_supplier_info(table: List[List[str]], headers: List[str]) -> str:
@@ -232,6 +208,47 @@ def is_summary_row(row_dict: Dict) -> bool:
     return False
 
 
+def is_actual_transaction(row_dict: Dict) -> bool:
+    """실제 거래 데이터인지 확인 (헤더, 합계, 메타데이터 제외)"""
+    # 명확하게 제외할 헤더나 메타데이터 키워드
+    exclusion_keywords = ['등록번호', '사업장', '대표', '업태', '종목', '전화', '주소', '팩스']
+
+    # 합계/소계 키워드
+    summary_keywords = ['합계', '소계', '총계', '품목집계', '월계', '일계']
+
+    for key, value in row_dict.items():
+        if value and isinstance(value, str):
+            value_str = str(value).strip()
+
+            # 명확한 제외 키워드가 있으면 제외
+            if any(keyword in value_str for keyword in exclusion_keywords):
+                return False
+
+            # 합계 행인지 확인
+            if any(keyword in value_str for keyword in summary_keywords):
+                return False
+
+    # 거래 데이터 조건을 더 유연하게: 품명 또는 수량/금액이 있으면 유효
+    has_item = False
+    has_financial_data = False
+
+    for key, value in row_dict.items():
+        if value:
+            value_str = str(value).strip()
+
+            # 레미콘 품명 확인 (더 유연하게)
+            if '레미콘' in value_str:
+                has_item = True
+
+            # 금액이나 수량 데이터 확인
+            if (re.search(r'\d{1,3}(?:,\d{3})*', value_str) and  # 숫자 패턴
+                (len(re.findall(r'\d', value_str)) >= 3)):  # 최소 3자리 숫자
+                has_financial_data = True
+
+    # 품명과 금액/수량 중 하나라도 있으면 유효한 거래로 판단
+    return has_item or has_financial_data
+
+
 def has_meaningful_data(row_dict: Dict) -> bool:
     """의미있는 데이터가 있는 행인지 확인"""
     # 숫자 데이터가 있는지 확인 (더 포괄적으로)
@@ -272,6 +289,162 @@ def has_meaningful_data(row_dict: Dict) -> bool:
     return has_numeric or has_data
 
 
+def flatten_transaction_data(data: Dict) -> List[Dict]:
+    """
+    AI가 반환하는 다양한 nested JSON 구조를 flat한 거래 레코드 배열로 변환
+    """
+    flat_records = []
+
+    def extract_nested_value(obj, keys):
+        """nested 객체에서 값을 안전하게 추출"""
+        if not isinstance(obj, dict):
+            return ''
+
+        for key in keys:
+            if key in obj:
+                value = obj[key]
+                if isinstance(value, dict):
+                    # nested된 경우 company_name 등을 찾기
+                    return value.get('company_name', '') or value.get('name', '') or str(value)
+                return str(value) if value else ''
+        return ''
+
+    # 다양한 레벨에서 공급자 정보 추출
+    supplier = (
+        extract_nested_value(data, ['supplier']) or
+        extract_nested_value(data.get('header', {}), ['supplier']) or
+        extract_nested_value(data.get('supplier_info', {}), ['company_name', 'name']) or
+        data.get('공급자', '')
+    )
+
+    # 현장명/고객 정보 추출
+    customer = (
+        extract_nested_value(data, ['customer', 'receiver', 'buyer']) or
+        extract_nested_value(data.get('header', {}), ['customer']) or
+        data.get('현장명', '') or
+        data.get('delivery_site', '') or
+        data.get('project_name', '')
+    )
+
+    print(f"Extracted - Supplier: '{supplier}', Customer: '{customer}'")
+
+    # transactions 배열 찾기 (다양한 위치에서)
+    transactions = (
+        data.get('transactions', []) or
+        data.get('transaction_list', []) or
+        data.get('items', []) or
+        data.get('records', [])
+    )
+
+    # transactions가 없으면 데이터 자체가 거래 레코드인지 확인
+    if not transactions:
+        if data.get('item', '') or data.get('품명', '') or data.get('date', '') or data.get('amount', ''):
+            transactions = [data]
+        # header 안에 있을 수도 있음
+        elif data.get('header', {}).get('transactions', []):
+            transactions = data['header']['transactions']
+
+    print(f"Found {len(transactions)} potential transactions")
+
+    for i, transaction in enumerate(transactions):
+        if isinstance(transaction, dict):
+            print(f"Transaction {i+1}: {list(transaction.keys())}")
+
+            # 숫자 필드 안전하게 처리
+            def safe_int(value):
+                if not value:
+                    return 0
+                try:
+                    return int(str(value).replace(',', '').replace('.', ''))
+                except:
+                    return 0
+
+            def safe_float(value):
+                if not value:
+                    return 0.0
+                try:
+                    return float(str(value).replace(',', ''))
+                except:
+                    return 0.0
+
+            # 필드명 통일 (더 포괄적으로 매핑)
+            record = {
+                '현장명': (transaction.get('현장명', '') or
+                         transaction.get('customer', '') or
+                         transaction.get('buyer', '') or
+                         transaction.get('site', '') or
+                         customer or '포스코이앤씨 관련'),
+                '공급자': (transaction.get('공급자', '') or
+                         transaction.get('supplier', '') or
+                         transaction.get('company', '') or
+                         supplier or '미확인'),
+                '품명': (transaction.get('품명', '') or
+                        transaction.get('item', '') or
+                        transaction.get('product', '') or
+                        transaction.get('product_name', '') or
+                        transaction.get('material', '')),
+                '규격': (transaction.get('규격', '') or
+                        transaction.get('specification', '') or
+                        transaction.get('spec', '') or
+                        transaction.get('grade', '') or
+                        transaction.get('standard', '')),
+                '단위': (transaction.get('단위', '') or
+                        transaction.get('unit', '') or 'M3'),
+                '물량': safe_float(transaction.get('물량', 0) or
+                                 transaction.get('quantity', 0) or
+                                 transaction.get('volume', 0) or
+                                 transaction.get('amount_delivered', 0) or
+                                 transaction.get('qty', 0)),
+                '단가': safe_int(transaction.get('단가', 0) or
+                               transaction.get('unit_price', 0) or
+                               transaction.get('price', 0) or
+                               transaction.get('rate', 0)),
+                '공급가액': safe_int(transaction.get('공급가액', 0) or
+                                   transaction.get('amount', 0) or
+                                   transaction.get('supply_amount', 0) or
+                                   transaction.get('subtotal', 0) or
+                                   transaction.get('net_amount', 0)),
+                '세액': safe_int(transaction.get('세액', 0) or
+                               transaction.get('tax', 0) or
+                               transaction.get('tax_amount', 0) or
+                               transaction.get('vat', 0)),
+                '합계': safe_int(transaction.get('합계', 0) or
+                               transaction.get('total', 0) or
+                               transaction.get('grand_total', 0) or
+                               transaction.get('total_amount', 0)),
+                '출하일': (transaction.get('출하일', '') or
+                         transaction.get('date', '') or
+                         transaction.get('delivery_date', '') or
+                         transaction.get('ship_date', '') or
+                         transaction.get('supply_date', '')),
+                '비고': (transaction.get('비고', '') or
+                        transaction.get('note', '') or
+                        transaction.get('remarks', '') or
+                        transaction.get('memo', ''))
+            }
+
+            print(f"  품명: '{record['품명']}', 물량: {record['물량']}, 공급가액: {record['공급가액']}")
+
+            # 유효한 거래 데이터인지 확인 (품명 없어도 허용)
+            has_quantity = record['물량'] > 0
+            has_amount = record['공급가액'] > 0 or record['합계'] > 0
+            has_date = bool(record['출하일'])
+
+            # 품명이 없어도 수량이나 금액 데이터가 있으면 유효한 거래로 처리
+            has_transaction_data = has_quantity or has_amount or has_date
+
+            if has_transaction_data:
+                flat_records.append(record)
+                if record['품명']:
+                    print(f"  ✅ Valid transaction added with product: {record['품명']}")
+                else:
+                    print(f"  ✅ Valid transaction added (no product name, but has other data)")
+            else:
+                print(f"  ❌ Invalid transaction skipped - no meaningful data")
+
+    return flat_records
+
+
 def extract_with_ai(text: str, user_prompt: str = None) -> List[Dict]:
     """
     Google Gemini AI를 사용하여 텍스트에서 구조화된 견적서/청구서 데이터를 추출합니다.
@@ -279,8 +452,10 @@ def extract_with_ai(text: str, user_prompt: str = None) -> List[Dict]:
     try:
         print("Using Google Gemini AI for data extraction...")
 
-        # Gemini 모델 초기화 (최신 모델)
-        model = genai.GenerativeModel('gemini-flash-latest')
+        # API 클라이언트 확인
+        if client is None:
+            print("❌ Google AI 클라이언트가 초기화되지 않았습니다.")
+            return parse_text_manually(text)
 
         # 사용자 정의 프롬프트가 있으면 사용, 없으면 기본 프롬프트 사용
         if user_prompt and user_prompt.strip():
@@ -294,33 +469,65 @@ JSON만 반환:
 """
         else:
             prompt = f"""
-이 페이지의 레미콘 거래 데이터를 JSON 배열로 추출하세요.
+다음 레미콘 거래명세서/세금계산서에서 실제 거래 데이터를 JSON 배열로 추출하세요.
 
 {text}
 
-⚠️ 중요한 구분 규칙:
-- 공급자(판매자): 에스피레미콘, 유진기업, 쌍용레미콘 등 (실제 레미콘을 공급하는 회사)
-- 현장명(구매자): 포스코이앤씨, 공사명 등 (레미콘을 공급받는 곳)
-- 포스코이앤씨는 절대 공급자가 아님 (현장명으로 분류)
+🎯 추출 목표:
+- 레미콘 공급 내역의 각 거래 라인
+- 날짜, 품목, 수량, 금액 정보가 포함된 모든 행
+- 헤더나 합계 행은 제외
 
-추출 지침:
-- 실제 거래 행만 추출 (헤더/소계/합계 제외)
-- 레미콘 품목이 있는 행만 추출
-- 빈 값은 ""으로 표시
-- 숫자에서 쉼표 제거
+📋 추출 필드:
+- 출하일: 납품/출하 날짜 (2026-03-16, 03/16 등 형식)
+- 품명: 레미콘 종류 ("레미콘", "콘크리트" 등) - 없으면 빈 문자열
+- 규격: 강도 등급 (25-35-180 등) - 없으면 빈 문자열
+- 물량: 공급 수량 (숫자만, 소수점 포함 가능)
+- 단위: 수량 단위 (M3, ㎥ 등)
+- 단가: 단위당 가격
+- 공급가액: 공급 금액 (세전)
+- 세액: 부가세
+- 합계: 총 금액 (세포함)
 
-JSON 형식:
-[{{"현장명":"포스코이앤씨 관련 현장명","공급자":"실제 레미콘 공급업체","품명":"레미콘(일반)","규격":"25-35-180","단위":"M3","물량":69,"단가":102000,"공급가액":7038000,"세액":703800,"합계":7741800,"출하일":"2026-03-16","비고":""}}]
+❗ 중요: 품명이 명시되지 않은 경우에도 수량, 금액, 날짜 등이 있으면 추출하세요.
 
-JSON만 반환하세요."""
+🏢 회사 정보:
+- 공급자: 문서 상단의 공급하는 회사명 찾기
+- 현장명: 납품지/구매처 정보
 
-        # Gemini API 호출 - 대용량 JSON 응답을 위한 토큰 증가
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=16000,  # 21개 레코드의 완전한 JSON을 위해 대폭 증가
-            )
+⚠️ 제외 항목:
+- 컬럼 제목 행 (NO, 품목, 단가 등)
+- 합계/소계 행
+- 회사 정보/주소 등
+
+JSON 형식 예시:
+[
+  {{
+    "출하일": "2026-03-16",
+    "품명": "레미콘(일반)",
+    "규격": "25-35-180",
+    "물량": 69.000,
+    "단위": "M3",
+    "단가": 102000,
+    "공급가액": 7038000,
+    "세액": 703800,
+    "합계": 7741800,
+    "공급자": "(주)에스피레미콘",
+    "현장명": "포스코이앤씨",
+    "비고": ""
+  }}
+]
+
+숫자 필드는 쉼표 없이 숫자만 반환하세요. 실제 거래 데이터만 JSON 배열로 반환하세요."""
+
+        # Gemini API 호출 - 새로운 API 사용
+        response = client.models.generate_content(
+            model='gemini-flash-latest',
+            contents=prompt,
+            config={
+                'temperature': 0.1,
+                'max_output_tokens': 16000,  # 21개 레코드의 완전한 JSON을 위해 대폭 증가
+            }
         )
 
         if response.text:
@@ -385,19 +592,26 @@ JSON만 반환하세요."""
                 # JSON 파싱 및 검증
                 if json_str:
                     extracted_data = json.loads(json_str)
-                    if not isinstance(extracted_data, list):
-                        extracted_data = [extracted_data]
 
-                    print(f"✅ Gemini AI extracted {len(extracted_data)} items")
+                    # Nested 구조를 flat 구조로 변환
+                    flat_records = []
 
-                    # 데이터 품질 확인
-                    valid_records = [r for r in extracted_data if r.get('공급자') and r.get('품명')]
-                    print(f"Valid records with 공급자 and 품명: {len(valid_records)}")
-
-                    if len(extracted_data) >= 1:  # 페이지별로 1개 이상이면 성공
-                        return extracted_data
+                    if isinstance(extracted_data, list):
+                        for item in extracted_data:
+                            flat_records.extend(flatten_transaction_data(item))
                     else:
-                        print(f"❌ No valid records ({len(extracted_data)}), falling back")
+                        flat_records = flatten_transaction_data(extracted_data)
+
+                    print(f"✅ Gemini AI extracted {len(flat_records)} transaction records")
+
+                    # 유효한 거래 데이터 확인
+                    valid_records = [r for r in flat_records if r.get('품명') and (r.get('공급가액') or r.get('금액'))]
+                    print(f"Valid transaction records: {len(valid_records)}")
+
+                    if len(valid_records) >= 1:  # 페이지별로 1개 이상이면 성공
+                        return valid_records
+                    else:
+                        print(f"❌ No valid transaction records ({len(valid_records)}), falling back")
                         return parse_text_manually(text)
                 else:
                     print("❌ No valid JSON found in response")

@@ -7,6 +7,10 @@ import sqlite3
 import json
 from datetime import datetime
 from typing import Optional, List, Dict
+from dotenv import load_dotenv
+
+# 최상위 .env 파일 로드
+load_dotenv(dotenv_path="../.env")
 
 from database import DatabaseManager
 from pdf_utils import extract_pdf_tables
@@ -40,20 +44,43 @@ async def upload_pdf(
     with open(file_location, "wb") as f:
         f.write(await file.read())
 
-    # PDF 표 데이터 추출 (Google Gemini AI 사용)
+    # PDF 표 데이터 추출 (Google Gemini AI 전용)
     try:
         tables = extract_pdf_tables(file_location, prompt)
 
-        # API 할당량 소진 감지
-        if tables and len(tables) > 0 and tables[0].get('api_quota_exceeded'):
-            return JSONResponse({
-                "filename": file.filename,
-                "prompt": prompt,
-                "status": "api_quota_exceeded",
-                "error": "API 할당량이 소진되어 작업을 진행할 수 없습니다.",
-                "error_type": "quota_exceeded",
-                "retry_info": "할당량은 매일 오전 9시(한국시간)에 복구됩니다."
-            }, status_code=429)
+        # API 에러 감지 및 처리
+        if tables and len(tables) > 0 and tables[0].get('api_error'):
+            error_info = tables[0]
+
+            if error_info.get('error_type') == 'quota_exceeded':
+                return JSONResponse({
+                    "filename": file.filename,
+                    "prompt": prompt,
+                    "status": "api_quota_exceeded",
+                    "error": error_info.get('error_message', 'API 할당량이 소진되었습니다.'),
+                    "error_type": "quota_exceeded",
+                    "recovery_time": error_info.get('recovery_time', '매일 오전 9시'),
+                    "recovery_message": error_info.get('recovery_message', '오전 9시 이후에 다시 이용해주세요.'),
+                    "current_status": error_info.get('current_status', 'API 할당량 소진')
+                }, status_code=429)
+            elif error_info.get('error_type') == 'api_not_configured':
+                return JSONResponse({
+                    "filename": file.filename,
+                    "prompt": prompt,
+                    "status": "configuration_error",
+                    "error": error_info.get('error_message', 'API 설정 오류'),
+                    "error_type": "configuration",
+                    "action_required": error_info.get('action_required', 'API 키를 확인하세요.')
+                }, status_code=500)
+            else:
+                return JSONResponse({
+                    "filename": file.filename,
+                    "prompt": prompt,
+                    "status": "extraction_failed",
+                    "error": error_info.get('error_message', '데이터 추출에 실패했습니다.'),
+                    "error_type": error_info.get('error_type', 'extraction_error'),
+                    "suggestion": error_info.get('suggestion', '다른 PDF를 시도해보세요.')
+                }, status_code=400)
 
         # AI 추출 결과 임시 저장 (디버깅용)
         extraction_id = f"{file.filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

@@ -88,7 +88,7 @@ function App() {
 
       // API 할당량 소진 확인
       if (uploadResponse.data.status === "api_quota_exceeded") {
-        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오전 9시(한국시간)에 복구됩니다.", "warning");
+        showNotification(`⚠️ API 사용량 제한으로 프로그램 이용이 제한됩니다.\n${uploadResponse.data.recovery_time}에 다시 이용해주세요.`, "warning");
         return;
       }
 
@@ -115,7 +115,8 @@ function App() {
       console.error("AI 추출 테스트 실패:", error);
       // 429 상태 코드 (API 할당량 초과) 확인
       if (error.response && error.response.status === 429) {
-        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오전 9시(한국시간)에 복구됩니다.", "warning");
+        const responseData = error.response.data || {};
+        showNotification(`⚠️ API 사용량 제한으로 프로그램 이용이 제한됩니다.\n${responseData.recovery_time || '매일 오전 9시'}에 다시 이용해주세요.`, "warning");
       } else {
         showNotification("AI 추출 테스트에 실패했습니다.", "error");
       }
@@ -176,8 +177,22 @@ function App() {
 
       // API 할당량 소진 확인
       if (res.data.status === "api_quota_exceeded") {
-        setError("API 할당량이 소진되어 작업을 진행할 수 없습니다.");
-        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오전 9시(한국시간)에 복구됩니다.", "warning");
+        const errorMessage = `🚫 ${res.data.error}\n\n⏰ 복구 시간: ${res.data.recovery_time}\n💡 ${res.data.recovery_message}`;
+        setError(errorMessage);
+        showNotification(`⚠️ API 사용량 제한으로 프로그램 이용이 제한됩니다.\n${res.data.recovery_time}에 다시 이용해주세요.`, "warning");
+        return;
+      }
+
+      // 기타 API 에러 확인
+      if (res.data.status === "configuration_error") {
+        setError(`🔧 ${res.data.error}\n📋 ${res.data.action_required}`);
+        showNotification("API 설정 오류가 발생했습니다. 관리자에게 문의하세요.", "error");
+        return;
+      }
+
+      if (res.data.status === "extraction_failed") {
+        setError(`❌ ${res.data.error}\n💡 ${res.data.suggestion}`);
+        showNotification("데이터 추출에 실패했습니다. 다른 PDF 파일을 시도해보세요.", "error");
         return;
       }
 
@@ -197,12 +212,16 @@ function App() {
 
       // 429 상태 코드 (API 할당량 초과) 확인
       if (err.response && err.response.status === 429) {
-        setError("API 할당량이 소진되어 작업을 진행할 수 없습니다.");
-        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오전 9시(한국시간)에 복구됩니다.", "warning");
+        const responseData = err.response.data || {};
+        const errorMessage = `🚫 API 사용량 제한으로 프로그램 이용이 제한됩니다.\n⏰ 복구 시간: ${responseData.recovery_time || '매일 오전 9시'}\n💡 ${responseData.recovery_message || '복구 시간 이후에 다시 이용해주세요.'}`;
+        setError(errorMessage);
+        showNotification(`⚠️ API 사용량 제한으로 프로그램 이용이 제한됩니다.\n${responseData.recovery_time || '매일 오전 9시'}에 다시 이용해주세요.`, "warning");
       } else if (err.response?.data?.status === "api_quota_exceeded") {
         // 백엔드에서 직접 status를 확인
-        setError("API 할당량이 소진되어 작업을 진행할 수 없습니다.");
-        showNotification("⚠️ API 할당량이 소진되어 작업을 진행할 수 없습니다. 할당량은 매일 오후 4시에 복구됩니다.", "warning");
+        const responseData = err.response.data;
+        const errorMessage = `🚫 ${responseData.error}\n⏰ 복구 시간: ${responseData.recovery_time}\n💡 ${responseData.recovery_message}`;
+        setError(errorMessage);
+        showNotification(`⚠️ API 사용량 제한으로 프로그램 이용이 제한됩니다.\n${responseData.recovery_time}에 다시 이용해주세요.`, "warning");
       } else {
         setError("업로드 또는 추출 중 오류 발생");
         showNotification("오류가 발생했습니다. 다시 시도해주세요.", "error");
