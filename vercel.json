@@ -1,28 +1,15 @@
 {
-  "name": "remicon-fullstack",
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/hello.py",
-      "use": "@vercel/python"
+  "functions": {
+    "api/hello.py": {
+      "runtime": "@vercel/python"
     },
-    {
-      "src": "api/test.py",
-      "use": "@vercel/python"
+    "api/test.py": {
+      "runtime": "@vercel/python"
     },
-    {
-      "src": "api/statistics.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "buildCommand": "npm run build",
-        "outputDirectory": "dist"
-      }
+    "api/statistics.py": {
+      "runtime": "@vercel/python"
     }
-  ],
+  },
   "routes": [
     {
       "src": "/api/hello",
