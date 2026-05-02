@@ -452,10 +452,10 @@ def extract_with_ai(text: str, user_prompt: str = None) -> List[Dict]:
     try:
         print("Using Google Gemini AI for data extraction...")
 
-        # API 클라이언트 확인
+        # API 클라이언트 확인 - AI 전용 서비스
         if client is None:
             print("❌ Google AI 클라이언트가 초기화되지 않았습니다.")
-            return parse_text_manually(text)
+            return [{"api_quota_exceeded": True, "error_message": "AI API 서비스에 연결할 수 없습니다. API 키를 확인해주세요."}]
 
         # 사용자 정의 프롬프트가 있으면 사용, 없으면 기본 프롬프트 사용
         if user_prompt and user_prompt.strip():
@@ -611,20 +611,20 @@ JSON 형식 예시:
                     if len(valid_records) >= 1:  # 페이지별로 1개 이상이면 성공
                         return valid_records
                     else:
-                        print(f"❌ No valid transaction records ({len(valid_records)}), falling back")
-                        return parse_text_manually(text)
+                        print(f"❌ AI가 유효한 거래 데이터를 찾지 못했습니다 ({len(valid_records)})")
+                        return [{"api_quota_exceeded": True, "error_message": "AI가 이 PDF에서 유효한 거래 데이터를 찾을 수 없습니다. 다른 PDF 파일을 시도해보세요."}]
                 else:
-                    print("❌ No valid JSON found in response")
-                    return parse_text_manually(text)
+                    print("❌ AI 응답에서 유효한 JSON을 찾을 수 없습니다")
+                    return [{"api_quota_exceeded": True, "error_message": "AI가 데이터를 올바르게 처리하지 못했습니다. 다른 PDF를 시도해보거나 잠시 후 다시 시도해주세요."}]
 
             except json.JSONDecodeError as e:
                 print(f"❌ JSON parsing error: {e}")
                 if 'json_str' in locals():
                     print(f"Problematic JSON (first 500 chars): {json_str[:500]}")
-                return parse_text_manually(text)
+                return [{"api_quota_exceeded": True, "error_message": "AI 응답 데이터 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."}]
         else:
             print("No response from Gemini AI")
-            return parse_text_manually(text)
+            return [{"api_quota_exceeded": True, "error_message": "AI 서비스로부터 응답을 받을 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요."}]
 
     except Exception as e:
         error_msg = str(e)
@@ -636,7 +636,7 @@ JSON 형식 예시:
             # 특별한 에러 객체 반환 (fallback 하지 않음)
             return [{"api_quota_exceeded": True, "error_message": "API 할당량이 소진되어 작업을 진행할 수 없습니다."}]
 
-        return parse_text_manually(text)
+        return [{"api_quota_exceeded": True, "error_message": f"AI 서비스 오류: {error_msg}. 잠시 후 다시 시도해주세요."}]
 
 
 def parse_text_manually(text: str) -> List[Dict]:

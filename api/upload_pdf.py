@@ -32,12 +32,13 @@ class handler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Headers', 'Content-Type')
             self.end_headers()
 
-            # 환경변수 체크
+            # AI API 필수 체크 - 없으면 즉시 중단
             if not os.getenv("GOOGLE_API_KEY"):
                 response_data = {
                     "status": "configuration_error",
-                    "error": "Google AI API 키가 설정되지 않았습니다.",
-                    "action_required": "관리자에게 문의하여 GOOGLE_API_KEY를 설정해주세요."
+                    "error": "🔧 AI 추출 서비스를 사용할 수 없습니다.",
+                    "action_required": "Google AI API가 설정되지 않았습니다. 관리자에게 문의해주세요.",
+                    "details": "이 서비스는 AI 기반 데이터 추출만 지원합니다."
                 }
                 self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode())
                 return
@@ -96,11 +97,14 @@ class handler(BaseHTTPRequestHandler):
 
             try:
                 print(f"📄 Processing PDF: {file_item.filename}")
+                print(f"📝 User prompt: {prompt}")
+                print(f"🔑 API Key configured: {bool(os.getenv('GOOGLE_API_KEY'))}")
 
                 # PDF 처리
                 extracted_data = extract_pdf_tables(temp_path, prompt)
 
                 print(f"✅ Extraction completed: {len(extracted_data)} records")
+                print(f"📊 Raw extraction result: {extracted_data[:2] if extracted_data else 'No data'}")
 
                 # API 에러 처리
                 if extracted_data and isinstance(extracted_data[0], dict):
