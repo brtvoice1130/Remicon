@@ -2,6 +2,14 @@
   "version": 2,
   "builds": [
     {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "*.js",
+      "use": "@vercel/static"
+    },
+    {
       "src": "api/hello.py",
       "use": "@vercel/python"
     },
@@ -28,8 +36,36 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "src": "/api/hello",
+      "dest": "api/hello.py"
+    },
+    {
+      "src": "/api/test",
+      "dest": "api/test.py"
+    },
+    {
+      "src": "/api/statistics",
+      "dest": "api/statistics.py"
+    },
+    {
+      "src": "/api/upload_pdf",
+      "dest": "api/upload_pdf.py"
+    },
+    {
+      "src": "/api/data",
+      "dest": "api/data.py"
+    },
+    {
+      "src": "/api/ai-extractions",
+      "dest": "api/ai-extractions.py"
+    },
+    {
+      "src": "/api/ai-extractions/(.*)",
+      "dest": "api/ai-extractions.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }

@@ -75,3 +75,4 @@ backend/uploads/*
 
 # Claude Code
 .claude/
+.vercel

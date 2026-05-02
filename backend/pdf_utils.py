@@ -470,27 +470,31 @@ JSON만 반환:
 """
         else:
             prompt = f"""
-다음 레미콘 거래명세서/세금계산서에서 실제 거래 데이터를 JSON 배열로 추출하세요.
+다음 건설/레미콘 거래명세서/세금계산서에서 실제 거래 데이터를 JSON 배열로 추출하세요.
 
 {text}
 
 🎯 추출 목표:
-- 레미콘 공급 내역의 각 거래 라인
-- 날짜, 품목, 수량, 금액 정보가 포함된 모든 행
+- 모든 거래 내역 라인 (레미콘, 건설자재, 서비스 등)
+- 날짜, 수량, 금액 정보가 포함된 모든 거래 행
+- 품명이 없어도 거래 데이터(수량/금액)가 있으면 모두 포함
 - 헤더나 합계 행은 제외
 
 📋 추출 필드:
-- 출하일: 납품/출하 날짜 (2026-03-16, 03/16 등 형식)
-- 품명: 레미콘 종류 ("레미콘", "콘크리트" 등) - 없으면 빈 문자열
-- 규격: 강도 등급 (25-35-180 등) - 없으면 빈 문자열
-- 물량: 공급 수량 (숫자만, 소수점 포함 가능)
-- 단위: 수량 단위 (M3, ㎥ 등)
-- 단가: 단위당 가격
-- 공급가액: 공급 금액 (세전)
-- 세액: 부가세
-- 합계: 총 금액 (세포함)
+- 출하일: 납품/출하 날짜 (2026-03-16, 03/16 등 형식) - 없으면 빈 문자열
+- 품명: 품목명 ("레미콘", "콘크리트", "철근" 등) - 🔴 없으면 빈 문자열로 처리
+- 규격: 강도 등급이나 사양 (25-35-180 등) - 없으면 빈 문자열
+- 물량: 공급 수량 (숫자만, 소수점 포함 가능) - 없으면 0
+- 단위: 수량 단위 (M3, ㎥, EA, 개 등) - 없으면 빈 문자열
+- 단가: 단위당 가격 - 없으면 0
+- 공급가액: 공급 금액 (세전) - 없으면 0
+- 세액: 부가세 - 없으면 0
+- 합계: 총 금액 (세포함) - 없으면 0
 
-❗ 중요: 품명이 명시되지 않은 경우에도 수량, 금액, 날짜 등이 있으면 추출하세요.
+❗❗ 핵심 원칙:
+- 품명이 비어있어도 OK! 수량이나 금액만 있어도 유효한 거래로 추출
+- 숫자 데이터(물량, 금액)가 있는 모든 라인을 포함
+- "품명 없음" 보다는 빈 문자열 "" 사용
 
 🏢 회사 정보:
 - 공급자: 문서 상단의 공급하는 회사명 찾기
@@ -605,9 +609,24 @@ JSON 형식 예시:
 
                     print(f"✅ Gemini AI extracted {len(flat_records)} transaction records")
 
-                    # 유효한 거래 데이터 확인
-                    valid_records = [r for r in flat_records if r.get('품명') and (r.get('공급가액') or r.get('금액'))]
-                    print(f"Valid transaction records: {len(valid_records)}")
+                    # 유효한 거래 데이터 확인 (품명이 없어도 금액이나 수량 데이터가 있으면 유효)
+                    valid_records = []
+                    for r in flat_records:
+                        # 품명이 있거나, 금액/수량 데이터가 있으면 유효
+                        has_product_name = bool(r.get('품명', '').strip())
+                        has_financial_data = bool(r.get('공급가액') or r.get('금액') or r.get('합계'))
+                        has_quantity_data = bool(r.get('물량', 0) > 0)
+                        has_date_data = bool(r.get('출하일', '').strip())
+
+                        # 품명이 없어도 수량, 금액, 날짜 중 하나라도 있으면 유효
+                        is_valid = has_product_name or has_financial_data or has_quantity_data or has_date_data
+
+                        if is_valid:
+                            valid_records.append(r)
+                            if not has_product_name:
+                                print(f"  ✅ Added record without product name: 물량={r.get('물량')}, 금액={r.get('공급가액')}")
+
+                    print(f"Valid transaction records: {len(valid_records)} (including records without product names)")
 
                     if len(valid_records) >= 1:  # 페이지별로 1개 이상이면 성공
                         return valid_records
