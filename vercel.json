@@ -3,7 +3,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "api/*.py",
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "50mb"
@@ -19,15 +19,19 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "api/index.py"
+      "src": "/api/test",
+      "dest": "api/test.py"
     },
     {
-      "src": "/(.*)",
+      "src": "/statistics/(.*)",
+      "dest": "api/statistics.py"
+    },
+    {
+      "src": "/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg)$)",
       "dest": "frontend/dist/$1"
     },
     {
-      "src": "/",
+      "src": "/(.*)",
       "dest": "frontend/dist/index.html"
     }
   ],
