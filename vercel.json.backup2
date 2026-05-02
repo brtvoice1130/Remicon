@@ -36,6 +36,10 @@
       "dest": "api/data.py"
     },
     {
+      "src": "/api/ai-extractions$",
+      "dest": "api/ai-extractions.py"
+    },
+    {
       "src": "/api/ai-extractions/(.*)",
       "dest": "api/ai-extractions.py"
     },
