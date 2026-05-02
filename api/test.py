@@ -1,16 +1,32 @@
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from http.server import BaseHTTPRequestHandler
+import json
 
-app = FastAPI()
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
 
-@app.get("/")
-def test():
-    return {"status": "API test successful", "message": "Vercel serverless function working"}
+        response_data = {
+            "status": "API test successful",
+            "message": "Vercel serverless function working",
+            "path": self.path,
+            "method": "GET"
+        }
 
-@app.get("/api/test")
-def test_api():
-    return {"status": "API test successful", "path": "/api/test"}
+        self.wfile.write(json.dumps(response_data).encode())
+        return
 
-# Vercel 핸들러
-def handler(request):
-    return app(request)
+    def do_POST(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+
+        response_data = {
+            "status": "API test successful",
+            "path": self.path,
+            "method": "POST"
+        }
+
+        self.wfile.write(json.dumps(response_data).encode())
+        return
