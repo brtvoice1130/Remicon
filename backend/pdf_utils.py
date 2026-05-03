@@ -7,7 +7,7 @@ import json
 import re
 import os
 import google.genai as genai
-from .db_manager import save_extracted_data
+from db_manager import save_extracted_data
 
 # Google API 키 설정 (환경변수에서 가져오기)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
