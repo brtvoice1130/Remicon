@@ -26,6 +26,7 @@ function App() {
   const [showResults, setShowResults] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showPromptModal, setShowPromptModal] = useState(false);
+  const [showDebugModal, setShowDebugModal] = useState(false);
   const [logs, setLogs] = useState([]);
   const [retryCount, setRetryCount] = useState(0);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
@@ -342,7 +343,7 @@ function App() {
 
   // 모달 열림/닫힘에 따른 배경 스크롤 제어
   useEffect(() => {
-    if (showPromptModal) {
+    if (showPromptModal || showDebugModal) {
       document.body.classList.add('modal-open');
     } else {
       document.body.classList.remove('modal-open');
@@ -352,7 +353,7 @@ function App() {
     return () => {
       document.body.classList.remove('modal-open');
     };
-  }, [showPromptModal]);
+  }, [showPromptModal, showDebugModal]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -545,6 +546,14 @@ function App() {
                     }
                   </div>
                 </div>
+                <button
+                  onClick={() => setShowDebugModal(true)}
+                  disabled={!debugInfo && !extractedData}
+                  className={`btn-small ${(debugInfo || extractedData) ? 'secondary' : 'disabled'}`}
+                  title="AI 응답 데이터 확인"
+                >
+                  🔍 디버그 정보
+                </button>
                 <button
                   onClick={() => {
                     const dataToDownload = (extractedData && extractedData.length > 0) ? extractedData : filteredData;
@@ -791,6 +800,70 @@ function App() {
                 className="btn-small primary"
               >
                 💾 저장 후 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 디버그 정보 모달 */}
+      {showDebugModal && (
+        <div className="modal-overlay">
+          <div className="modal-content large-modal">
+            <div className="modal-header">
+              <div className="modal-title">
+                <span>🔍</span>
+                <span>AI 응답 디버그 정보</span>
+              </div>
+              <button
+                onClick={() => setShowDebugModal(false)}
+                className="modal-close-btn"
+                title="닫기"
+              >
+                ✖️
+              </button>
+            </div>
+
+            <div className="modal-body debug-modal-body">
+              <div className="debug-section">
+                <h3>📊 추출된 거래 데이터 ({extractedData?.length || 0}개)</h3>
+                {extractedData && extractedData.length > 0 ? (
+                  <div className="debug-data">
+                    {extractedData.map((item, index) => (
+                      <div key={index} className="debug-item">
+                        <h4>거래 #{index + 1}</h4>
+                        <div className="debug-fields">
+                          {Object.entries(item).map(([key, value]) => (
+                            <div key={key} className={`debug-field ${key.includes('가액') || key.includes('금액') || key.includes('원') || key.toLowerCase().includes('amount') ? 'highlight-field' : ''}`}>
+                              <span className="debug-key">{key}:</span>
+                              <span className="debug-value">{value || '-'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="debug-empty">추출된 데이터가 없습니다.</p>
+                )}
+              </div>
+
+              {debugInfo && (
+                <div className="debug-section">
+                  <h3>🤖 AI 디버그 정보</h3>
+                  <pre className="debug-json">
+                    {JSON.stringify(debugInfo, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button
+                onClick={() => setShowDebugModal(false)}
+                className="btn-small secondary"
+              >
+                닫기
               </button>
             </div>
           </div>
