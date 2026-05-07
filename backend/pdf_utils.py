@@ -482,6 +482,16 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
         if isinstance(transaction, dict):
             print(f"Transaction {i+1}: {list(transaction.keys())}")
 
+            # 🔍 DEBUG: AI가 반환한 모든 필드와 값 출력
+            print(f"  전체 데이터: {transaction}")
+
+            # 공급가액 관련 필드 특별 확인
+            supply_related_keys = [k for k in transaction.keys() if '가액' in str(k) or '금액' in str(k) or '원' in str(k) or 'amount' in str(k).lower()]
+            if supply_related_keys:
+                print(f"  💰 공급가액 관련 가능 필드들: {supply_related_keys}")
+                for key in supply_related_keys:
+                    print(f"    - {key}: {transaction[key]}")
+
             # 숫자 필드 안전하게 처리
             def safe_int(value):
                 if not value:
