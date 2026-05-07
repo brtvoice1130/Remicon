@@ -9,15 +9,15 @@ import os
 import google.genai as genai
 from db_manager import save_extracted_data
 
-# Google API 키 설정 (환경변수에서 가져오기)
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    print("⚠️ GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.")
-    print("설정 방법: export GOOGLE_API_KEY='your_api_key'")
+# Gemini API 키 설정 (환경변수에서 가져오기)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("⚠️ GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
+    print("설정 방법: export GEMINI_API_KEY='your_api_key'")
     client = None
 else:
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-    print("✅ Google AI API 클라이언트 초기화 완료")
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    print("✅ Gemini API 클라이언트 초기화 완료")
 
 def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool = False, save_to_db: bool = True, clear_before_save: bool = False) -> List[Dict]:
     """
