@@ -548,9 +548,8 @@ function App() {
                 </div>
                 <button
                   onClick={() => setShowDebugModal(true)}
-                  disabled={!debugInfo && !extractedData}
-                  className={`btn-small ${(debugInfo || extractedData) ? 'secondary' : 'disabled'}`}
-                  title="AI 응답 데이터 확인"
+                  className="btn-small secondary"
+                  title="AI 응답 데이터 확인 (오류 정보 포함)"
                 >
                   🔍 디버그 정보
                 </button>
@@ -825,6 +824,37 @@ function App() {
             </div>
 
             <div className="modal-body debug-modal-body">
+              {/* API 오류 정보 */}
+              {result && result.api_error && (
+                <div className="debug-section">
+                  <h3>⚠️ API 오류 정보</h3>
+                  <div className="debug-item" style={{backgroundColor: '#fef2f2', borderColor: '#fecaca'}}>
+                    <div className="debug-fields">
+                      <div className="debug-field">
+                        <span className="debug-key">오류 타입:</span>
+                        <span className="debug-value">{result.error_type || 'unknown'}</span>
+                      </div>
+                      <div className="debug-field">
+                        <span className="debug-key">오류 메시지:</span>
+                        <span className="debug-value">{result.error_message || '알 수 없는 오류'}</span>
+                      </div>
+                      {result.current_status && (
+                        <div className="debug-field">
+                          <span className="debug-key">현재 상태:</span>
+                          <span className="debug-value">{result.current_status}</span>
+                        </div>
+                      )}
+                      {result.recovery_time && (
+                        <div className="debug-field">
+                          <span className="debug-key">복구 시간:</span>
+                          <span className="debug-value">{result.recovery_time}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="debug-section">
                 <h3>📊 추출된 거래 데이터 ({extractedData?.length || 0}개)</h3>
                 {extractedData && extractedData.length > 0 ? (
@@ -844,9 +874,24 @@ function App() {
                     ))}
                   </div>
                 ) : (
-                  <p className="debug-empty">추출된 데이터가 없습니다.</p>
+                  <div className="debug-empty">
+                    {result && result.api_error
+                      ? "API 제한으로 인해 데이터를 추출할 수 없습니다."
+                      : "추출된 데이터가 없습니다."
+                    }
+                  </div>
                 )}
               </div>
+
+              {/* 일반 결과 정보 */}
+              {result && !result.api_error && (
+                <div className="debug-section">
+                  <h3>📋 처리 결과</h3>
+                  <pre className="debug-json">
+                    {JSON.stringify(result, null, 2)}
+                  </pre>
+                </div>
+              )}
 
               {debugInfo && (
                 <div className="debug-section">
