@@ -535,26 +535,10 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
                                transaction.get('price', 0) or
                                transaction.get('rate', 0)),
                 '공급가액': safe_int(transaction.get('공급가액', 0) or
-                                   transaction.get('공급액', 0) or
-                                   transaction.get('supply_amount', 0) or
                                    transaction.get('amount', 0) or
+                                   transaction.get('supply_amount', 0) or
                                    transaction.get('subtotal', 0) or
-                                   transaction.get('net_amount', 0) or
-                                   transaction.get('price', 0) or
-                                   transaction.get('value', 0) or
-                                   transaction.get('cost', 0) or
-                                   transaction.get('금액', 0) or
-                                   transaction.get('공급금액', 0) or
-                                   transaction.get('거래금액', 0) or
-                                   transaction.get('대금', 0) or
-                                   transaction.get('가격', 0) or
-                                   transaction.get('총액', 0) or
-                                   transaction.get('판매금액', 0) or
-                                   transaction.get('매출금액', 0) or
-                                   transaction.get('결제금액', 0) or
-                                   transaction.get('청구금액', 0) or
-                                   transaction.get('공급원가', 0) or
-                                   transaction.get('원가', 0)),
+                                   transaction.get('net_amount', 0)),
                 '세액': safe_int(transaction.get('세액', 0) or
                                transaction.get('tax', 0) or
                                transaction.get('tax_amount', 0) or
@@ -574,13 +558,7 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
                         transaction.get('memo', ''))
             }
 
-            # 공급가액 추출 결과 로그
-            if record['공급가액'] > 0:
-                print(f"  ✅ 공급가액 추출됨: {record['공급가액']}")
-            else:
-                print(f"  ❌ 공급가액 추출 실패 - PDF에서 해당 필드를 찾을 수 없음")
-
-            print(f"  품명: '{record['품명']}', 물량: {record['물량']}, 단가: {record['단가']}, 공급가액: {record['공급가액']}, 합계: {record['합계']}")
+            print(f"  품명: '{record['품명']}', 물량: {record['물량']}, 공급가액: {record['공급가액']}")
 
             # 더 관대한 유효성 검사 - 최소 1개 필드만 있어도 유효
             has_product = bool(record['품명'].strip()) if record['품명'] else False
