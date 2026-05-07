@@ -114,28 +114,36 @@ def save_extracted_data(filename: str, extracted_records: List[Dict], clear_befo
 def is_valid_for_db(record: Dict) -> bool:
     """
     DB 저장을 위한 최종 유효성 검사
-    더 엄격한 기준 적용
+    매우 관대한 기준 - 품명 없어도 저장 허용
     """
-    # 필수 금액 데이터 확인
+    # 모든 가능한 필드 확인
+    product_name = record.get("품명", "") or record.get("item", "")
     amount = safe_int(record.get("공급가액", 0))
     total = safe_int(record.get("합계", 0))
     quantity = safe_float(record.get("물량", 0))
-
-    # 최소한 금액이나 수량 중 하나는 있어야 함
-    has_financial_data = amount > 0 or total > 0
-    has_quantity_data = quantity > 0
-
-    if not (has_financial_data or has_quantity_data):
-        return False
-
-    # 공급자나 현장명 중 하나는 있어야 함
     supplier = record.get("공급자", "") or record.get("supplier", "")
     site = record.get("현장명", "") or record.get("customer", "")
+    delivery_date = record.get("출하일", "") or record.get("date", "")
 
-    if not (supplier.strip() or site.strip()):
-        return False
+    # 유효한 필드 개수 계산
+    valid_fields = sum([
+        bool(product_name.strip()) if product_name else False,
+        amount > 0 or total > 0,
+        quantity > 0,
+        bool(supplier.strip()) if supplier else False,
+        bool(site.strip()) if site else False,
+        bool(delivery_date.strip()) if delivery_date else False
+    ])
 
-    return True
+    # 최소 1개 필드만 있어도 저장 (매우 관대한 기준)
+    is_valid = valid_fields >= 1
+
+    if is_valid:
+        print(f"  💾 DB 저장 승인: 유효필드={valid_fields}개")
+    else:
+        print(f"  ❌ DB 저장 거부: 모든 필드가 비어있음")
+
+    return is_valid
 
 def safe_int(value) -> int:
     """안전하게 정수로 변환"""

@@ -86,19 +86,41 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool
         "text_preview": all_text[:500] + "..." if len(all_text) > 500 else all_text
     } if debug_mode else None
 
-    # AI로 페이지별 텍스트 처리 (응답 길이 제한 해결)
+    # AI로 최적화된 텍스트 처리 (API 호출 최소화)
     ai_extracted_all = []
-    if page_texts:
-        print(f"🧠 Processing {total_pages} pages individually with AI")
 
-        for i, page_text in enumerate(page_texts):
-            if page_text.strip():
-                print(f"📄 Processing page {i+1} with AI...")
-                if debug_mode:
-                    debug_info["extraction_steps"].append(f"Processing page {i+1} (text length: {len(page_text)})")
+    # 전체 텍스트를 청크로 분할하여 처리 (페이지별이 아닌 청크별)
+    max_chunk_length = 12000  # 토큰 제한 고려
 
-                page_extracted = extract_with_ai(page_text, user_prompt)
-                if page_extracted:
+    if len(all_text) > max_chunk_length:
+        print(f"🔧 텍스트가 길어서 청크로 분할: {len(all_text)} characters")
+        # 페이지 기준으로 청크 분할
+        text_chunks = []
+        current_chunk = ""
+
+        for page_text in page_texts:
+            if len(current_chunk + page_text) > max_chunk_length:
+                if current_chunk:
+                    text_chunks.append(current_chunk)
+                current_chunk = page_text
+            else:
+                current_chunk += page_text
+
+        if current_chunk:
+            text_chunks.append(current_chunk)
+    else:
+        text_chunks = [all_text]
+
+    print(f"🧠 Processing {len(text_chunks)} chunks with AI (instead of {total_pages} individual pages)")
+
+    for i, chunk in enumerate(text_chunks):
+        if chunk.strip():
+            print(f"📄 Processing chunk {i+1}/{len(text_chunks)} with AI...")
+            if debug_mode:
+                debug_info["extraction_steps"].append(f"Processing chunk {i+1} (text length: {len(chunk)})")
+
+            page_extracted = extract_with_ai(chunk, user_prompt)
+            if page_extracted:
                     # API 할당량 소진 즉시 감지 및 중단
                     for item in page_extracted:
                         if item.get('api_quota_exceeded'):
@@ -141,8 +163,24 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool
                     "data_preview": {k: v for k, v in list(result.items())[:5]}  # 처음 5개 필드만
                 }
 
-                # 품명이 없어도 수량, 금액, 날짜 중 하나라도 있으면 유효
-                is_valid = has_product_name or has_financial_data or has_quantity_data or has_date_data
+                # 더 관대한 유효성 검사: 최소 1개 필드만 있어도 유효 (빈 문자열이나 0이 아닌 경우)
+                has_supplier = bool(result.get('공급자', '').strip())
+                has_customer = bool(result.get('현장명', '').strip())
+
+                # 유효한 필드 개수 계산
+                valid_fields = sum([
+                    has_product_name,
+                    has_financial_data,
+                    has_quantity_data,
+                    has_date_data,
+                    has_supplier,
+                    has_customer
+                ])
+
+                # 최소 1개 필드라도 있으면 유효 (매우 관대한 기준)
+                is_valid = valid_fields >= 1
+
+                print(f"  검증: 품명={has_product_name}, 금액={has_financial_data}, 수량={has_quantity_data}, 날짜={has_date_data}, 공급자={has_supplier}, 현장={has_customer}, 유효필드={valid_fields}")
                 validation_result["is_valid"] = is_valid
 
                 if debug_mode:
@@ -398,15 +436,16 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
                 return str(value) if value else ''
         return ''
 
-    # 다양한 레벨에서 공급자 정보 추출
+    # 다양한 레벨에서 공급자 정보 추출 (Gemini 응답 형태 추가)
     supplier = (
         extract_nested_value(data, ['supplier']) or
         extract_nested_value(data.get('header', {}), ['supplier']) or
         extract_nested_value(data.get('supplier_info', {}), ['company_name', 'name']) or
-        data.get('공급자', '')
+        data.get('공급자', '') or
+        data.get('공급자명', '')  # Gemini 응답 형태
     )
 
-    # 현장명/고객 정보 추출
+    # 현장명/고객 정보 추출 (Gemini 응답 형태 추가)
     customer = (
         extract_nested_value(data, ['customer', 'receiver', 'buyer']) or
         extract_nested_value(data.get('header', {}), ['customer']) or
@@ -417,17 +456,21 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
 
     print(f"Extracted - Supplier: '{supplier}', Customer: '{customer}'")
 
-    # transactions 배열 찾기 (다양한 위치에서)
+    # transactions 배열 찾기 (다양한 위치에서, Gemini 응답 형태 추가)
     transactions = (
         data.get('transactions', []) or
         data.get('transaction_list', []) or
         data.get('items', []) or
-        data.get('records', [])
+        data.get('records', []) or
+        data.get('거래데이터', []) or  # Gemini 응답 형태
+        data.get('거래내역', [])     # 추가 가능한 형태
     )
 
-    # transactions가 없으면 데이터 자체가 거래 레코드인지 확인
+    # transactions가 없으면 데이터 자체가 거래 레코드인지 확인 (Gemini 형태 추가)
     if not transactions:
-        if data.get('item', '') or data.get('품명', '') or data.get('date', '') or data.get('amount', ''):
+        if (data.get('item', '') or data.get('품명', '') or data.get('품목', '') or  # Gemini: 품목
+            data.get('date', '') or data.get('출하일', '') or  # Gemini: 출하일
+            data.get('amount', '') or data.get('공급가액', '') or data.get('합계', '')):  # Gemini: 공급가액, 합계
             transactions = [data]
         # header 안에 있을 수도 있음
         elif data.get('header', {}).get('transactions', []):
@@ -464,10 +507,12 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
                          transaction.get('site', '') or
                          customer or '포스코이앤씨 관련'),
                 '공급자': (transaction.get('공급자', '') or
+                         transaction.get('공급자명', '') or  # Gemini 응답
                          transaction.get('supplier', '') or
                          transaction.get('company', '') or
                          supplier or '미확인'),
                 '품명': (transaction.get('품명', '') or
+                        transaction.get('품목', '') or  # Gemini 응답
                         transaction.get('item', '') or
                         transaction.get('product', '') or
                         transaction.get('product_name', '') or
@@ -480,6 +525,7 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
                 '단위': (transaction.get('단위', '') or
                         transaction.get('unit', '') or 'M3'),
                 '물량': safe_float(transaction.get('물량', 0) or
+                                 transaction.get('공급량', 0) or  # Gemini 응답
                                  transaction.get('quantity', 0) or
                                  transaction.get('volume', 0) or
                                  transaction.get('amount_delivered', 0) or
@@ -514,22 +560,23 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
 
             print(f"  품명: '{record['품명']}', 물량: {record['물량']}, 공급가액: {record['공급가액']}")
 
-            # 유효한 거래 데이터인지 확인 (품명 없어도 허용)
+            # 더 관대한 유효성 검사 - 최소 1개 필드만 있어도 유효
+            has_product = bool(record['품명'].strip()) if record['품명'] else False
             has_quantity = record['물량'] > 0
             has_amount = record['공급가액'] > 0 or record['합계'] > 0
-            has_date = bool(record['출하일'])
+            has_date = bool(record['출하일'].strip()) if record['출하일'] else False
+            has_supplier = bool(record['공급자'].strip()) if record['공급자'] else False
+            has_customer = bool(record['현장명'].strip()) if record['현장명'] else False
 
-            # 품명이 없어도 수량이나 금액 데이터가 있으면 유효한 거래로 처리
-            has_transaction_data = has_quantity or has_amount or has_date
+            # 유효한 필드 개수 계산
+            valid_fields_count = sum([has_product, has_quantity, has_amount, has_date, has_supplier, has_customer])
 
-            if has_transaction_data:
+            # 최소 1개 필드라도 있으면 추가 (매우 관대한 기준)
+            if valid_fields_count >= 1:
                 flat_records.append(record)
-                if record['품명']:
-                    print(f"  ✅ Valid transaction added with product: {record['품명']}")
-                else:
-                    print(f"  ✅ Valid transaction added (no product name, but has other data)")
+                print(f"  ✅ 거래 데이터 추가: 유효필드={valid_fields_count}개 (품명={has_product}, 수량={has_quantity}, 금액={has_amount}, 날짜={has_date}, 공급자={has_supplier}, 현장={has_customer})")
             else:
-                print(f"  ❌ Invalid transaction skipped - no meaningful data")
+                print(f"  ❌ 거래 데이터 건너뜀: 모든 필드가 비어있음")
 
     return flat_records
 
@@ -539,9 +586,9 @@ def extract_with_ai(text: str, user_prompt: str = None) -> List[Dict]:
     Google Gemini AI를 사용하여 텍스트에서 구조화된 견적서/청구서 데이터를 추출합니다.
     """
     try:
-        print("Using Google Gemini AI for data extraction...")
+        print("🤖 Google Gemini AI를 사용하여 데이터 추출 중...")
 
-        # API 클라이언트 확인 - AI 전용 서비스
+        # API 클라이언트 확인
         if client is None:
             print("❌ Google AI 클라이언트가 초기화되지 않았습니다.")
             return [{"api_quota_exceeded": True, "error_message": "AI API 서비스에 연결할 수 없습니다. API 키를 확인해주세요."}]
@@ -623,13 +670,13 @@ JSON 형식 예시:
 
 숫자 필드는 쉼표 없이 숫자만 반환하세요. 실제 거래 데이터만 JSON 배열로 반환하세요."""
 
-        # Gemini API 호출 - 새로운 API 사용
+        # Gemini API 호출 - 토큰 사용량 최적화
         response = client.models.generate_content(
             model='gemini-flash-latest',
             contents=prompt,
             config={
                 'temperature': 0.1,
-                'max_output_tokens': 16000,  # 21개 레코드의 완전한 JSON을 위해 대폭 증가
+                'max_output_tokens': 6000,  # 토큰 사용량 감소로 할당량 절약
             }
         )
 
@@ -707,22 +754,35 @@ JSON 형식 예시:
 
                     print(f"✅ Gemini AI extracted {len(flat_records)} transaction records")
 
-                    # 유효한 거래 데이터 확인 (품명이 없어도 금액이나 수량 데이터가 있으면 유효)
+                    # 매우 관대한 유효성 검사 - 거의 모든 데이터 허용
                     valid_records = []
                     for r in flat_records:
-                        # 품명이 있거나, 금액/수량 데이터가 있으면 유효
+                        # 모든 가능한 필드 확인
                         has_product_name = bool(r.get('품명', '').strip())
                         has_financial_data = bool(r.get('공급가액') or r.get('금액') or r.get('합계'))
                         has_quantity_data = bool(r.get('물량', 0) > 0)
                         has_date_data = bool(r.get('출하일', '').strip())
+                        has_supplier = bool(r.get('공급자', '').strip())
+                        has_customer = bool(r.get('현장명', '').strip())
 
-                        # 품명이 없어도 수량, 금액, 날짜 중 하나라도 있으면 유효
-                        is_valid = has_product_name or has_financial_data or has_quantity_data or has_date_data
+                        # 유효한 필드 개수 계산
+                        valid_field_count = sum([
+                            has_product_name,
+                            has_financial_data,
+                            has_quantity_data,
+                            has_date_data,
+                            has_supplier,
+                            has_customer
+                        ])
+
+                        # 최소 1개 필드만 있어도 유효 (매우 관대한 기준)
+                        is_valid = valid_field_count >= 1
 
                         if is_valid:
                             valid_records.append(r)
-                            if not has_product_name:
-                                print(f"  ✅ Added record without product name: 물량={r.get('물량')}, 금액={r.get('공급가액')}")
+                            print(f"  ✅ 레코드 추가: 유효필드={valid_field_count}개 - 품명:{has_product_name}, 금액:{has_financial_data}, 수량:{has_quantity_data}, 날짜:{has_date_data}, 공급자:{has_supplier}, 현장:{has_customer}")
+                        else:
+                            print(f"  ❌ 레코드 제외: 모든 필드가 비어있음")
 
                     print(f"Valid transaction records: {len(valid_records)} (including records without product names)")
 
