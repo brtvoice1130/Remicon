@@ -692,6 +692,32 @@ JSON 형식 예시:
 
         if response.text:
             content = response.text.strip()
+
+            # 💰 API 사용량 및 비용 정보 로깅
+            try:
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    usage = response.usage_metadata
+                    input_tokens = getattr(usage, 'prompt_token_count', 0)
+                    output_tokens = getattr(usage, 'candidates_token_count', 0)
+                    total_tokens = getattr(usage, 'total_token_count', input_tokens + output_tokens)
+
+                    # Gemini 1.5 Pro 가격 (2024년 기준)
+                    # Input: $0.00125 per 1K tokens, Output: $0.005 per 1K tokens
+                    input_cost = (input_tokens / 1000) * 0.00125
+                    output_cost = (output_tokens / 1000) * 0.005
+                    total_cost = input_cost + output_cost
+
+                    print(f"💰 API 사용량 정보:")
+                    print(f"  📥 입력 토큰: {input_tokens:,}개 (${input_cost:.6f})")
+                    print(f"  📤 출력 토큰: {output_tokens:,}개 (${output_cost:.6f})")
+                    print(f"  📊 총 토큰: {total_tokens:,}개")
+                    print(f"  💵 총 비용: ${total_cost:.6f} (약 ₩{total_cost * 1300:.2f})")
+                    print(f"  🔄 이 요청의 예상 비용: ₩{total_cost * 1300:.2f}")
+                else:
+                    print("💰 사용량 정보를 가져올 수 없습니다.")
+            except Exception as usage_error:
+                print(f"💰 사용량 로깅 오류: {usage_error}")
+
             print(f"Gemini response: {content[:200]}...")
 
             # JSON 부분만 추출 (강화된 파싱)
