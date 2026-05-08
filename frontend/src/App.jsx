@@ -317,7 +317,8 @@ function App() {
 
     currentData.forEach(item => {
       const company = item.공급자 || item.supplier || '미분류';
-      const amount = item.합계 || item.total_amount || item.공급가액 || item.amount || 0;
+      const totalAmount = item.합계 || item.total_amount || 0;  // 합계 우선
+      const supplyAmount = item.공급가액 || item.supply_amount || item.amount || 0;  // 공급가액 별도
       const quantity = item.물량 || item.quantity || 0;
 
       if (companyMap.has(company)) {
@@ -325,14 +326,16 @@ function App() {
         companyMap.set(company, {
           company: company,
           count: existing.count + 1,
-          totalAmount: existing.totalAmount + amount,
+          totalAmount: existing.totalAmount + totalAmount,
+          totalSupplyAmount: existing.totalSupplyAmount + supplyAmount,
           totalQuantity: existing.totalQuantity + quantity
         });
       } else {
         companyMap.set(company, {
           company: company,
           count: 1,
-          totalAmount: amount,
+          totalAmount: totalAmount,
+          totalSupplyAmount: supplyAmount,
           totalQuantity: quantity
         });
       }
@@ -703,6 +706,10 @@ function App() {
                       <div className="stat-item">
                         <span className="stat-label">총 물량</span>
                         <span className="stat-value">{company.totalQuantity.toLocaleString()} M3</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">공급가액</span>
+                        <span className="stat-value">₩{company.totalSupplyAmount.toLocaleString()}</span>
                       </div>
                       <div className="stat-item">
                         <span className="stat-label">총 금액</span>
