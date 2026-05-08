@@ -682,7 +682,7 @@ JSON 형식 예시:
 
         # Gemini API 호출 - 토큰 사용량 최적화
         response = client.models.generate_content(
-            model='gemini-1.5-flash',  # 안정적인 모델 사용 (experimental 버전 제외)
+            model='gemini-1.5-pro',  # 유료 크레딧 사용 가능한 프로덕션 모델
             contents=prompt,
             config={
                 'temperature': 0.1,
