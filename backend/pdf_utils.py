@@ -119,7 +119,7 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool
             if debug_mode:
                 debug_info["extraction_steps"].append(f"Processing chunk {i+1} (text length: {len(chunk)})")
 
-            page_extracted = extract_with_ai(chunk, user_prompt)
+            page_extracted = extract_with_ai(chunk, user_prompt, call_number=i+1, total_calls=len(text_chunks))
             if page_extracted:
                     # API 할당량 소진 즉시 감지 및 중단
                     for item in page_extracted:
@@ -591,7 +591,7 @@ def flatten_transaction_data(data: Dict) -> List[Dict]:
     return flat_records
 
 
-def extract_with_ai(text: str, user_prompt: str = None) -> List[Dict]:
+def extract_with_ai(text: str, user_prompt: str = None, call_number: int = 1, total_calls: int = 1) -> List[Dict]:
     """
     Google Gemini AI를 사용하여 텍스트에서 구조화된 견적서/청구서 데이터를 추출합니다.
     """
@@ -707,12 +707,12 @@ JSON 형식 예시:
                     output_cost = (output_tokens / 1000) * 0.005
                     total_cost = input_cost + output_cost
 
-                    print(f"💰 API 사용량 정보:")
+                    print(f"💰 API 사용량 정보 (호출 {call_number}/{total_calls}):")
                     print(f"  📥 입력 토큰: {input_tokens:,}개 (${input_cost:.6f})")
                     print(f"  📤 출력 토큰: {output_tokens:,}개 (${output_cost:.6f})")
                     print(f"  📊 총 토큰: {total_tokens:,}개")
-                    print(f"  💵 총 비용: ${total_cost:.6f} (약 ₩{total_cost * 1300:.2f})")
-                    print(f"  🔄 이 요청의 예상 비용: ₩{total_cost * 1300:.2f}")
+                    print(f"  💵 이 호출 비용: ${total_cost:.6f} (약 ₩{total_cost * 1300:.2f})")
+                    print(f"  📞 API 호출: {call_number}/{total_calls}번째")
                 else:
                     print("💰 사용량 정보를 가져올 수 없습니다.")
             except Exception as usage_error:
