@@ -90,7 +90,7 @@ def extract_pdf_tables(file_path: str, user_prompt: str = None, debug_mode: bool
     ai_extracted_all = []
 
     # 전체 텍스트를 청크로 분할하여 처리 (페이지별이 아닌 청크별)
-    max_chunk_length = 12000  # 토큰 제한 고려
+    max_chunk_length = 6000   # 사용량 최적화 - 청크 크기 대폭 감소
 
     if len(all_text) > max_chunk_length:
         print(f"🔧 텍스트가 길어서 청크로 분할: {len(all_text)} characters")
@@ -682,11 +682,11 @@ JSON 형식 예시:
 
         # Gemini API 호출 - 토큰 사용량 최적화
         response = client.models.generate_content(
-            model='gemini-1.5-pro',  # 유료 크레딧 확실 지원 모델
+            model='gemini-1.5-flash',  # 유료 지원 + 저렴한 Flash 모델
             contents=prompt,
             config={
                 'temperature': 0.1,
-                'max_output_tokens': 2048,  # 할당량 절약을 위해 대폭 감소
+                'max_output_tokens': 1024,  # 사용량 대폭 절약
             }
         )
 
